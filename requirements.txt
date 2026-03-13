@@ -1,0 +1,38 @@
+# Python 3.12
+# Create venv: python -m venv venv
+# Activate (Windows): venv\Scripts\activate
+# Install: pip install -r requirements.txt
+
+# Spotify
+spotipy
+
+# Lyrics scraping
+requests
+beautifulsoup4
+lxml
+
+# Data
+pandas
+numpy
+pyarrow          # for parquet read/write
+
+# NLP / Embeddings
+sentence-transformers
+transformers
+
+# Modeling
+scikit-learn
+xgboost
+shap
+
+# Visualization
+matplotlib
+seaborn
+plotly
+jinja2           # for styled dataframes
+
+# Dimensionality reduction
+umap-learn
+
+# Notebook / Quarto
+ipykernel
