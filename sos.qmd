@@ -1,0 +1,1297 @@
+---
+title: "Sonic Time Travelers: Can a Song's Identity Place It in Its Era?"
+subtitle: "JSC370 Midterm Project - University of Toronto, 2026"
+author: "Anh Dang Phuong"
+date: "March 7, 2026"
+format:
+  html:
+    embed-resources: true
+    toc: true
+    toc-depth: 3
+    toc-title: "Table of Contents"
+    code-fold: true
+    code-summary: "Show code"
+    theme: cosmo
+jupyter: python3
+---
+
+```{python}
+#| label: setup
+#| include: false
+
+# Core
+import pandas as pd
+import numpy as np
+import re
+import os
+
+import requests
+import time
+
+# Spotify
+import spotipy
+from spotipy.oauth2 import SpotifyClientCredentials, SpotifyOAuth
+
+# Visualization
+import matplotlib.pyplot as plt
+import seaborn as sns
+import plotly.express as px
+
+# NLP / Embeddings
+from sentence_transformers import SentenceTransformer
+
+# Modeling
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.metrics import classification_report, confusion_matrix
+import xgboost as xgb
+
+# Misc
+import warnings
+warnings.filterwarnings("ignore")
+
+# Plot style
+sns.set_theme(style="whitegrid", palette="muted")
+```
+
+---
+
+## I. Introduction
+
+The project is motivated by a cultural observation: just as fashion cycles repeat themselves, music appears to as well. Artists like The Weeknd or Dua Lipa are frequently noted for their retro sonic aesthetics despite being comtemporary acts. This sparks curiosity on whether this phenomenon is statistically measurable and whether it correlates with commercial succes.
+
+### Research Question
+
+> *"Can a song's sonic and lyrical identity reliably place it in its era, and where does the model fail? Are modern songs that 'sound old' actually distinguishable from the originals?"*
+
+### Hypotheses
+
+We have some predictions regarding the outcome of our study:
+
+**Primary Hypothesis:** Modern songs mimicking 80s/90s sonics will be misclassified by the Audio Classification Model as being more "vintage" while being correctly identified by the Lyric model as "modern" due to contemporary and themes in their lyrics.
+
+**Secondary Hypothesis:** Missclassified modern songs, which are the "neo-retro" hits, will have a significantly higher Spotify Popularity Score than correctly classified modern songs. This supports a nostalgia sells theory, which is a strategy in marketing/creative that promotes products with characteristics that could evoke emotional feelings from customers so that they will make the purchase decision more easily.
+
+### Novelty
+
+<!-- [YOUR TEXT HERE]
+  - Contrast with existing Kaggle-based Spotify projects
+  - Emphasize the multi-source fusion (Spotify + Genius + MusicBrainz)
+  - Emphasize API-driven reproducibility vs. static snapshots
+  - The two-modality comparison angle has not been done extensively
+-->
+
+We will use data from Spotify, MusicBrainz, and Genius to TODO
+
+---
+
+## II. Methods
+
+<!-- [YOUR TEXT HERE — brief paragraph introducing the methods section] -->
+### Data Sources
+
+In order to answer all aspects of the research question, we collect and combine data from different sources:
+
+1. Spotify Web API
+
+- Documentation:
+
+- Purpose: audio features and track metadata 
+
+- What we collect: track ID, track name, artist name, album ID, release date, popularity score, and some audio features per song such as danceability, energy, loudness, key, mode.
+
+- Method: Search API queries by decade and genre keyword. For example, we query 80s rock tracks by calling `rock year:1980-1989`. Then pull the results by batches of 10. To respect Spotify's API rate limits (~5.5k records/day), we split the data collection process into 3-4 days to account for code bugs or unexpected failures. 
+
+2. Genius API + Web Scraping
+
+- Documentation:
+
+- Purpose: Song lyrics for lyrical embedding 
+
+- What we collect: Raw lyrics for each track, scraped from Genius song pages after searching by artist name and track name via the Genius search API
+
+- Method: First, we query the Genius search API to find the lyrics URL. Then, we will scrape the lyrics page using BeautifulSoup. After that, the scraped lyrics are cleaned by removing section headers such as [Verse 1], non-ASCII characters, and excess whitespace using regex. Cleaning will help further steps easier.
+
+3. MusicBraiz API
+
+- Documentation:
+
+- Purpose: Cultural enrichment and enhancing knowledge about the artists.
+
+- What we collect: artis country (mb_country), area of origin (mb_area), city of origin (mb_begin_area), match confidence score (mb_score) community tags, and genre tags.
+
+- Method: We search by artist name, then fetch the full artist record with tags. We have to put on rate limit to respect MusicBrainz policy. The artist names come from previously fetched spotify dataset, so to safe time, this collection process will run after every daily spotify collection, then append to the "master file". Match confidence score is retained to filter low-quality matches.
+
+
+### Data Acquisition
+
+#### Step 1: Seed Artists via Decade Playlists
+
+Data collection begins with a playlist-seeding strategy using Spotify's curated decade playlists as entry points. For each decade from the 1980s to the 2020s, we identified four playlists covering distinct genre branches to ensure the resulting artist pool is not dominated by a single style. Rock, Pop, and Hip Hop are sampled consistently across all five decades given their sustained cultural presence, while decade-specific genres such as Dance (1980s), RnB (1990s), Country (2000s), EDM (2010s), and Latin (2020s) are included to capture the unique sonic flavors of each era.
+
+| Decade | Seed Playlists | Genre |
+|--------|----------------|-------|
+| 1980s  | All Out 80s, 80s Rock Anthems, 80s Dance Hits, 80s Hip Hop Classics | Rock, Pop, Hip Hop, Dance |
+| 1990s  | All Out 90s, 90s Rock Anthems, 90s Hip Hop Classics, 90s R&B | Rock, Pop, Hip Hop, RnB |
+| 2000s  | All Out 00s, 2000s Rock, 2000s Hip Hop, 2000s Pop | Rock, Pop, Hip Hop, Country |
+| 2010s  | All Out 10s, 2010s Rock, 2010s Hip Hop, 2010s Pop | Rock, Pop, Hip Hop, EDM |
+| 2020s  | Today's Top Hits, 2020s Hip Hop, 2020s Pop, Hot Country | Rodck, Pop, Hip Hop, Latin |
+
+
+
+```{python}
+#| label: spotify-auth
+#| echo: true
+```
+
+```{python}
+import requests
+import base64
+import os
+
+CLIENT_ID     = os.environ.get("SPOTIFY_CLIENT_ID")
+CLIENT_SECRET = os.environ.get("SPOTIFY_CLIENT_SECRET")
+
+# Get access token via Client Credentials (no OAuth needed)
+auth_str = f"{CLIENT_ID}:{CLIENT_SECRET}"
+auth_b64 = base64.b64encode(auth_str.encode()).decode()
+
+token_res = requests.post(
+    "https://accounts.spotify.com/api/token",
+    headers={"Authorization": f"Basic {auth_b64}"},
+    data={"grant_type": "client_credentials"}
+)
+
+ACCESS_TOKEN = token_res.json()["access_token"]
+HEADERS = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
+print("Token OK:", ACCESS_TOKEN[:20], "...")
+```
+
+```{python}
+import time
+
+decade_queries = {
+    "1980s": ["rock year:1980-1989", "pop year:1980-1989", "hip hop year:1980-1989", "dance year:1980-1989"],
+    "1990s": ["rock year:1990-1999", "pop year:1990-1999", "hip hop year:1990-1999", "rnb year:1990-1999"],
+    "2000s": ["rock year:2000-2009", "pop year:2000-2009", "hip hop year:2000-2009", "country year:2000-2009"],
+    "2010s": ["rock year:2010-2019", "pop year:2010-2019", "hip hop year:2010-2019", "edm year:2010-2019"],
+    "2020s": ["rock year:2020-2026", "pop year:2020-2026", "hip hop year:2020-2026", "latin year:2020-2026"],
+}
+
+all_tracks = []
+```
+
+```{python}
+import time
+
+class RateLimiter:
+    """Simple token bucket — max 10 requests per 30 seconds to stay safe"""
+    def __init__(self, max_calls=10, period=30):
+        self.max_calls = max_calls
+        self.period = period
+        self.calls = []
+
+    def wait(self):
+        now = time.time()
+        # drop calls outside the rolling window
+        self.calls = [c for c in self.calls if now - c < self.period]
+        if len(self.calls) >= self.max_calls:
+            sleep_for = self.period - (now - self.calls[0]) + 0.5
+            print(f"  [RateLimiter] sleeping {sleep_for:.1f}s...")
+            time.sleep(sleep_for)
+        self.calls.append(time.time())
+
+limiter = RateLimiter(max_calls=10, period=30)  # conservative: 10 req/30s
+```
+
+```{python}
+def spotify_get(url, params):
+    """Returns response object, or None if rate limited."""
+    while True:
+        limiter.wait()
+        res = requests.get(url, headers=HEADERS, params=params)
+
+        if res.status_code == 200:
+            return res
+
+        if res.status_code == 429:
+            retry_after = int(res.headers.get("Retry-After", 10))
+            print(f"HMMM {retry_after}")
+            print(f"  [429] Rate limited — stopping.")
+            return None  # signal to outer loop to stop
+
+        if res.status_code == 401:
+            token_res = requests.post(
+                "https://accounts.spotify.com/api/token",
+                headers={"Authorization": f"Basic {auth_b64}"},
+                data={"grant_type": "client_credentials"}
+            )
+            ACCESS_TOKEN = token_res.json()["access_token"]
+            HEADERS["Authorization"] = f"Bearer {ACCESS_TOKEN}"
+            continue
+
+        return res
+
+
+def save_and_exit(all_tracks, filename="data/raw/spotify_tracks.parquet"):
+    df = pd.DataFrame(all_tracks).drop_duplicates(subset="track_id")
+    df.to_parquet(filename, index=False)
+    print(f"\nSaved {len(df)} tracks to {filename}")
+    print(df.groupby("seed_decade")["track_id"].count())
+```
+
+```{python}
+RATE_LIMITED = False
+all_tracks = []
+
+for decade, queries in decade_queries.items():
+    if RATE_LIMITED: break
+    for q in queries:
+        if RATE_LIMITED: break
+        for offset in range(0, 1000, 10):
+            if RATE_LIMITED: break
+            try:
+                res = spotify_get(
+                    "https://api.spotify.com/v1/search",
+                    {"q": q, "type": "track", "limit": 10, "offset": offset}
+                )
+
+                if res is None:  # rate limited
+                    RATE_LIMITED = True
+                    break
+
+                if res.status_code != 200 or not res.content:
+                    print(f"  Skipping {q} offset {offset}: {res.status_code}")
+                    break
+
+                items = res.json()["tracks"]["items"]
+                if not items:
+                    break
+
+                for t in items:
+                    if not t or not t.get("id"):
+                        continue
+                    all_tracks.append({
+                        "track_id":    t.get("id"),
+                        "track_name":  t.get("name"),
+                        "artist_id":   t["artists"][0]["id"] if t.get("artists") else None,
+                        "artist_name": t["artists"][0]["name"] if t.get("artists") else None,
+                        "album_id":    t["album"].get("id") if t.get("album") else None,
+                        "release_date":t["album"].get("release_date") if t.get("album") else None,
+                        "popularity":  t.get("popularity", None),
+                        "seed_decade": decade,
+                        "seed_query":  q,
+                    })
+
+                time.sleep(0.5)
+
+            except Exception as e:
+                print(f"  Exception: {e}")
+                break
+
+        print(f"Done: {decade} | {q} — running total: {len(all_tracks)}")
+
+# Always saves no matter what
+save_and_exit(all_tracks)
+```
+
+```{python}
+# Load all parquet files
+files = [
+    "data/raw/seed_tracks.parquet",
+    "data/raw/seed_tracks_partial.parquet",
+    "data/raw/seed_tracks_2_partial.parquet",
+    "data/raw/seed_tracks_3_partial.parquet",
+    "data/raw/seed_tracks_4_partial.parquet",
+]
+
+dfs = []
+for f in files:
+    if os.path.exists(f):
+        df = pd.read_parquet(f)
+        print(f"  {f}: {len(df)} tracks")
+        dfs.append(df)
+    else:
+        print(f"  MISSING: {f}")
+
+combined = pd.concat(dfs, ignore_index=True).drop_duplicates(subset="track_id")
+print(f"\nTotal after deduplication: {len(combined)}")
+print(combined.groupby("seed_decade")["track_id"].count())
+
+# Save both formats
+os.makedirs("data/raw", exist_ok=True)
+combined.to_parquet("data/raw/spotify_tracks.parquet", index=False)
+combined.to_csv("data/raw/spotify_tracks.csv", index=False)
+print("\nSaved spotify_tracks.parquet and spotify_tracks.csv!")
+```
+
+#### Step 2: MusicBrainz Enrichment
+
+To supplement Spotify's metadata with cultural context, we query the MusicBrainz API for each unique artist in our dataset. MusicBrainz is an open-source community-maintained music encyclopedia that provides structured data not available through Spotify, including the artist's country of origin, the city or region they are associated with, and community-contributed genre and style tags.
+
+For each artist, we perform a name-based search to retrieve the MusicBrainz artist ID, then make a detailed record fetch with tags and genres included. A match confidence score is returned with each search result and retained for downstream filtering. MusicBrainz enforces a strict rate limit of one request per second, which is respected using a fixed 1.1-second sleep between calls. 
+
+The resulting enrichment covers artist origin country, broader area, city of origin, and pipe-separated tag and genre strings.
+
+```{python}
+#| label: musicbrainz
+#| echo: true
+
+# Query MusicBrainz for a subset of artists
+# Get: area (country of origin), tags, genre tags
+# Merge on artist_name
+# Save to data/raw/musicbrainz_raw.parquet
+
+MB_HEADERS = {
+    # MusicBrainz requires a descriptive User-Agent or they block you
+    "User-Agent": "JSC370-MidtermProject/1.0 (anh.dangphuong@mail.utoronto.ca)"
+}
+
+def get_artist_mb(artist_name):
+    """Query MusicBrainz for artist metadata: country of origin and tags."""
+    try:
+        # Step 1: search for artist by name
+        search_res = requests.get(
+            "https://musicbrainz.org/ws/2/artist",
+            headers=MB_HEADERS,
+            params={
+                "query": f'artist:"{artist_name}"',
+                "limit": 1,
+                "fmt": "json"
+            }
+        )
+        time.sleep(1.1)  # MusicBrainz rate limit: 1 req/sec
+
+        if search_res.status_code != 200 or not search_res.json().get("artists"):
+            return None
+
+        artist = search_res.json()["artists"][0]
+        mb_id  = artist.get("id")
+
+        # Step 2: fetch full artist record to get tags
+        detail_res = requests.get(
+            f"https://musicbrainz.org/ws/2/artist/{mb_id}",
+            headers=MB_HEADERS,
+            params={"inc": "tags+genres", "fmt": "json"}
+        )
+        time.sleep(1.1)
+
+        if detail_res.status_code != 200:
+            return None
+
+        detail = detail_res.json()
+        tags   = [t["name"] for t in detail.get("tags", [])]
+        genres = [g["name"] for g in detail.get("genres", [])]
+
+        return {
+            "artist_name":    artist_name,
+            "mb_id":          mb_id,
+            "mb_country":     artist.get("country", None),         # e.g. "US", "GB"
+            "mb_area":        artist.get("area", {}).get("name"),  # e.g. "United States"
+            "mb_begin_area":  artist.get("begin-area", {}).get("name"),  # city of origin
+            "mb_tags":        "|".join(tags),
+            "mb_genres":      "|".join(genres),
+            "mb_score":       artist.get("score"),  # match confidence 0-100
+        }
+
+    except Exception as e:
+        print(f"  Error on {artist_name}: {e}")
+        return None
+```
+
+```{python}
+# Load unique artists from seed data
+# (run after seed_tracks.parquet exists)
+seed_df     = pd.read_parquet("data/raw/spotify_tracks.parquet")
+artists     = seed_df[["artist_id", "artist_name"]].drop_duplicates(subset="artist_id")
+
+artists_sample = artists.sample(len(artists), random_state=42)
+print(f"Querying MusicBrainz for {len(artists_sample)} artists...")
+
+mb_results = []
+for i, row in enumerate(artists_sample.itertuples()):
+    result = get_artist_mb(row.artist_name)
+    if result:
+        result["artist_id"] = row.artist_id
+        mb_results.append(result)
+    if i % 50 == 0:
+        print(f"  {i}/{len(artists_sample)} — {len(mb_results)} matched so far")
+
+mb_df = pd.DataFrame(mb_results)
+print(f"\nMusicBrainz matched: {len(mb_df)} / {len(artists_sample)} artists")
+print(mb_df["mb_country"].value_counts().head(10))
+
+os.makedirs("data/raw", exist_ok=True)
+mb_df.to_parquet("data/raw/musicbrainz_full.parquet", index=False)
+print("Saved to data/raw/musicbrainz_full.parquet")
+```
+
+```{python}
+# Load all parquet files
+files = [
+    "data/raw/musicbrainz_raw.parquet",
+    "data/raw/musicbrainz_raw_partial.parquet",
+    "data/raw/musicbrainz_raw_2_partial.parquet",
+    "data/raw/musicbrainz_raw_3_partial.parquet",
+    "data/raw/musicbrainz_raw_4_partial.parquet",
+]
+
+dfs = []
+for f in files:
+    if os.path.exists(f):
+        df = pd.read_parquet(f)
+        print(f"  {f}: {len(df)} artists")
+        dfs.append(df)
+    else:
+        print(f"  MISSING (skipping): {f}")
+
+combined = pd.concat(dfs, ignore_index=True).drop_duplicates(subset="artist_id")
+print(f"\nTotal after deduplication: {len(combined)}")
+print(f"Countries represented: {combined['mb_country'].nunique()}")
+print(combined["mb_country"].value_counts().head(10))
+
+os.makedirs("data/raw", exist_ok=True)
+combined.to_parquet("data/raw/musicbrainz.parquet", index=False)
+combined.to_csv("data/raw/musicbrainz.csv", index=False)
+print("\nSaved musicbrainz.parquet and musicbrainz.csv!")
+```
+
+#### Step 3: Lyrics via Genius
+
+Lyrics are retrieved for each track in our Spotify dataset. For each track, we first query the Genius API using the cleaned artist name and track name to obtain the lyrics page URL. Then we scrpae the page content using BeautifulSoup. Track names are pre-cleaned before querying by stripping parenthetical annotations such as "(Remastered)" or "(feat. Artist)" which tend to confuse the search results.
+
+Songs returning fewer than 20 words after cleaning are treated as failed scrapes. A checkpoint is saved every 500 tracks so the pipeline is fully resumable in the event of interruption or API failure. 
+
+```{python}
+from bs4 import BeautifulSoup
+
+GENIUS_TOKEN = os.environ.get("GENIUS_ACCESS_TOKEN")
+GENIUS_HEADERS = {"Authorization": f"Bearer {GENIUS_TOKEN}"}
+
+def search_genius(artist_name, track_name):
+  try:
+    res = requests.get(
+      "https://api.genius.com/search",
+      headers=GENIUS_HEADERS,
+      params={"q":f"{artist_name} {track_name}"},
+      timeout=10
+    )
+    if res.status_code != 200:
+      return None
+    hits = res.json()["response"]["hits"]
+    if not hits:
+      return None
+    #take first result
+    return hits[0]["result"]["url"]
+
+  except Exception:
+    return None
+
+  
+def scrape_lyrics(url):
+    try:
+        # 1. Use a real User-Agent to avoid being blocked
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+        }
+        res = requests.get(url, headers=headers, timeout=15)
+        if res.status_code != 200:
+            return None
+
+        soup = BeautifulSoup(res.text, "html.parser") # lxml can be finicky with broken HTML
+
+        # 2. Look for the newer lyrics containers
+        # Genius uses divs that start with 'Lyrics__Container'
+        lyrics_divs = soup.find_all("div", class_=re.compile("^Lyrics__Container"))
+        
+        if not lyrics_divs:
+            # Fallback for older layout
+            lyrics_divs = soup.find_all("div", attrs={"data-lyrics-container": "true"})
+
+        if not lyrics_divs:
+            return None 
+
+        lyrics_parts = []
+        for div in lyrics_divs:
+            # Handle <br> tags properly before getting text
+            for br in div.find_all("br"):
+                br.replace_with("\n")
+            lyrics_parts.append(div.get_text(separator="\n"))
+
+        raw_lyrics = "\n".join(lyrics_parts)
+        
+        # 3. Clean headers and non-ASCII (Your existing logic is good here)
+        cleaned = re.sub(r"\[.*?\]", "", raw_lyrics)
+        cleaned = re.sub(r"[^\x00-\x7F]+", " ", cleaned)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+
+        return cleaned if len(cleaned.split()) > 20 else None
+
+    except Exception as e:
+        print(f"Scrape error: {e}")
+        return None
+
+
+def clean_track_name(name):
+    # Remove text in parentheses like (Remastered), (Live), (feat. Artist)
+    name = re.sub(r'\s*\([^)]*\)', '', name)
+    # Remove text after dashes like - Remastered, - 2011 Mix
+    name = re.sub(r'\s*-\s*.*(?:Remaster|Mix|Live|Edit|Version|Radio).*', '', name, flags=re.IGNORECASE)
+    return name.strip()
+```
+
+```{python}
+print(f"Token: {GENIUS_TOKEN[:20] if GENIUS_TOKEN else 'NOT FOUND - IS NONE'}")
+```
+
+```{python}
+tracks_df = pd.read_parquet("data/raw/spotify_tracks.parquet")
+total = len(tracks_df)
+print(f"Total tracks to fetch lyrics for: {total}")
+
+# Resume support — skip already fetched tracks
+lyrics_file = "data/raw/lyrics_raw.parquet"
+if os.path.exists(lyrics_file):
+    existing = pd.read_parquet(lyrics_file)
+    fetched_ids = set(existing["track_id"].tolist())
+    print(f"Resuming — already fetched: {len(fetched_ids)}, remaining: {total - len(fetched_ids)}")
+else:
+    existing = pd.DataFrame()
+    fetched_ids = set()
+
+lyrics_results = []
+failed = 0
+success = 0
+
+for i, row in enumerate(tracks_df.itertuples()):
+    if row.track_id in fetched_ids:
+        continue
+    
+    cleaned_track = clean_track_name(row.track_name)
+    url = search_genius(row.artist_name, cleaned_track)
+    if url is None:
+        failed += 1
+        print(f"  [{i+1}/{total}] ✗ NOT FOUND  — {row.artist_name} | {row.track_name} (total failed: {failed})")
+        continue
+
+    lyrics = scrape_lyrics(url)
+    has_lyrics = lyrics is not None
+    if has_lyrics:
+        success += 1
+
+    lyrics_results.append({
+        "track_id":    row.track_id,
+        "track_name":  row.track_name,
+        "artist_name": row.artist_name,
+        "seed_decade": row.seed_decade,
+        "genius_url":  url,
+        "lyrics":      lyrics,
+        "has_lyrics":  has_lyrics,
+    })
+
+    status  = "✓" if has_lyrics else "✗ NO LYRICS"
+    fetched = len(lyrics_results) + len(fetched_ids)
+    print(f"  [{i+1}/{total}] {status} — {row.artist_name} | {row.track_name} ({row.seed_decade}) | match rate: {100*success/len(lyrics_results):.1f}%")
+
+    # Save checkpoint every 500 tracks
+    if len(lyrics_results) % 500 == 0:
+        checkpoint = pd.concat(
+            [existing, pd.DataFrame(lyrics_results)],
+            ignore_index=True
+        ).drop_duplicates(subset="track_id")
+        checkpoint.to_parquet(lyrics_file, index=False)
+        print(f"\n  ── Checkpoint saved — {len(checkpoint)}/{total} total | success: {success} | failed: {failed} ──\n")
+
+    time.sleep(0.5)
+
+# Final save
+final = pd.concat(
+    [existing, pd.DataFrame(lyrics_results)],
+    ignore_index=True
+).drop_duplicates(subset="track_id")
+
+final.to_parquet(lyrics_file, index=False)
+final.to_csv("data/raw/lyrics_raw.csv", index=False)
+
+matched = final["has_lyrics"].sum()
+print(f"\nDone — {len(final)} tracks processed")
+print(f"Lyrics found:   {matched} ({100*matched/len(final):.1f}%)")
+print(f"Lyrics missing: {len(final) - matched}")
+print(f"Match rate by decade:")
+print(final.groupby("seed_decade")["has_lyrics"].mean().round(2))
+```
+
+
+```{python}
+#| label: genius-lyrics
+#| echo: true
+mb_df.head()
+```
+
+#### Step 4: Lyrical Embeddings
+
+To represent lyrics as numerical features suitable for machine learning, we use the `all-MiniLM-L6-v2` model from `sentence transformers` library to generate dense vector embeddings of each song's full lyric text. This model maps variable-length text to a fixed vector that captures semantic meaning, making it possible to compare songs lyrically in a continuous embedding space regardless of exactly vocabulary differences. Embeddings will be cached to file after generation to save computation time later on.
+
+```{python}
+#| label: embeddings
+#| echo: true
+
+# load cleaned lyrics
+lyrics_df = pd.read_parquet("data/raw/lyrics_raw.parquet")
+lyrics_df = lyrics_df[lyrics_df["has_lyrics"] == True].reset_index(drop=True)
+
+# load model
+model = SentenceTransformer("all-MiniLM-L6-v2")
+
+lyrics_list = lyrics_df["lyrics"].tolist()
+embeddings = model.encode(lyrics_list, show_progress_bar=True, batch_size=64)
+print(f"Embedding shape: {embeddings.shape}")  # verify that it is (N,384)
+
+emb_df = pd.DataFrame(embeddings, columns=[f"emb_{i}" for i in range(384)])
+emb_df.insert(0, "track_id", lyrics_df["track_id"].values)
+
+os.makedirs("data/processed", exist_ok=True)
+emb_df.to_parquet("data/processed/embeddings.parquet", index=False)
+emb_df.to_csv("data/processed/embeddings.csv", index=False)
+print(f"Saved embeddings for {len(emb_df)} songs")
+```
+
+#### Step 5: Cleaning and Labeling
+
+With all raw data sources collected, we perform cleaning, decade labeling, and cross-source alignment in a single consolidated step. By cleaning after all fetching is complete, we avoid discarding tracks that may have failed one pipeline but could still contribute to the analysis.
+
+First, we clean the Spotify tracks. Release years are extracted and parsed, records outside the 1980 and 2026 range are removed, and tracks identified as remasters, live versions, or remixes via regex are filtered out. Deduplication retains only the earliest known release per artist and track name pair to preserve the song's true era of origin. Decade labels are then assigned by binning release years into 5 categories. A stratified cap of 2000 songs per decade is applied to correct for the overrepresentation of the 2010s. 
+
+The audio features, MusicBrainz, and lyrical embeddings are merged against the cleaned Spotify track list using track id and artist id. Tracks that failed MusicBrainz matching are retained in the audio and lyrics datasets with null rather than dropped, since country of origin is a supplementary feature than required. Tracks that failed Genius scraping are excluded only from the lyrics and master datasets but remain in the audio-only. 
+
+```{python}
+# load combined spotify tracks
+tracks_df = pd.read_parquet("data/raw/spotify_tracks.parquet")
+print(f"Raw tracks loaded: {len(tracks_df)}")
+
+# 1. extract year from release_date
+tracks_df["release_year"] = pd.to_datetime(tracks_df["release_date"], format="mixed", errors="coerce").dt.year
+
+# drop rows where year couldn't be parsed 
+tracks_df = tracks_df.dropna(subset=["release_year"])
+tracks_df["release_year"] = tracks_df["release_year"].astype(int)
+print(f"After dropping year: {len(tracks_df)}")
+
+# 2. filter to 1980 - 2026 only
+tracks_df = tracks_df[
+  (tracks_df["release_year"] >= 1980) &
+  (tracks_df["release_year"] <= 2026)
+]
+print(f"After filtering: {len(tracks_df)}")
+
+# 3. remove remasters, live versions, remixes
+REMASTER_PATTERN = r"remaster|live|remix|acoustic|anniversary|deluxe|version|edit"
+mask = tracks_df["track_name"].str.contains(REMASTER_PATTERN, case=False, regex=True, na=False)
+tracks_df = tracks_df[~mask]
+print(f"After removing remaster: {len(tracks_df)}")
+
+# 4. deduplication 
+# if same song appears on multiple albums/reissues, we keep the earliest release. that will be our true original era
+tracks_df = (tracks_df.sort_values("release_year").drop_duplicates(subset=["track_name", "artist_name"], keep="first"))
+print(f"After deduplication: {len(tracks_df)}")
+
+# 5. bin into decades
+def bin_decade(year):
+  if 1980 <= year <= 1989: return "1980s"
+  if 1990 <= year <= 1999: return "1990s"
+  if 2000 <= year <= 2009: return "2000s"
+  if 2010 <= year <= 2019: return "2010s"
+  if 2020 <= year <= 2026: return "2020s"
+  return None
+
+tracks_df["decade"] = tracks_df["release_year"].apply(bin_decade)
+tracks_df = tracks_df.dropna(subset=["decade"])
+print(f"\nDecade distribution (before cap):")
+print(tracks_df["decade"].value_counts().sort_index())
+```
+
+```{python}
+# 6. stratify cap at 2000 per decade
+tracks_clean = (
+    tracks_df
+    .groupby("decade", group_keys=False)[tracks_df.columns]
+    .apply(lambda x: x.sample(min(len(x), 2000), random_state=42))
+    .reset_index(drop=True)
+)
+print(f"\nDecade distribution (after cap):")
+print(tracks_clean["decade"].value_counts().sort_index())
+print(f"\nFinal clean dataset: {len(tracks_clean)} tracks")
+```
+
+```{python}
+tracks_clean
+```
+
+```{python}
+# 7. merge MusicBrainz
+mb_df = pd.read_parquet("data/raw/musicbrainz.parquet")
+tracks_clean = tracks_clean.merge(
+    mb_df[["artist_id", "mb_country", "mb_area", "mb_begin_area", "mb_tags", "mb_genres", "mb_score"]],
+    on="artist_id",
+    how="left"   # keep all tracks, null mb fields for unmatched artists
+)
+mb_matched = tracks_clean["mb_country"].notna().sum()
+print(f"\nMusicBrainz matched: {mb_matched}/{len(tracks_clean)} tracks ({100*mb_matched/len(tracks_clean):.1f}%)")
+
+
+# 8. merge lyrics
+lyrics_df = pd.read_parquet("data/raw/lyrics_raw.parquet")
+lyrics_df = lyrics_df[lyrics_df["has_lyrics"] == True][["track_id", "lyrics", "genius_url"]]
+tracks_clean = tracks_clean.merge(lyrics_df, on="track_id", how="left")
+lyrics_matched = tracks_clean["lyrics"].notna().sum()
+print(f"Lyrics matched:      {lyrics_matched}/{len(tracks_clean)} tracks ({100*lyrics_matched/len(tracks_clean):.1f}%)")
+
+
+# 9. merge embeddings
+emb_df = pd.read_parquet("data/processed/embeddings.parquet")
+tracks_clean = tracks_clean.merge(emb_df, on="track_id", how="left")
+emb_matched = tracks_clean["emb_0"].notna().sum()
+print(f"Embeddings matched:  {emb_matched}/{len(tracks_clean)} tracks ({100*emb_matched/len(tracks_clean):.1f}%)")
+
+```
+
+```{python}
+#save
+os.makedirs("data/processed", exist_ok=True)
+
+# audio dataset: all cleaned tracks regardless of lyrics
+tracks_clean.to_parquet("data/processed/tracks_clean.parquet", index=False)
+tracks_clean.to_csv("data/processed/tracks_clean.csv", index=False)
+
+# master dataset: only tracks with both audio + embeddings
+master = tracks_clean[tracks_clean["emb_0"].notna()].reset_index(drop=True)
+master.to_parquet("data/processed/master.parquet", index=False)
+
+print(f"\nAudio dataset:  {len(tracks_clean)} tracks to data/processed/tracks_clean.parquet")
+print(f"Master dataset: {len(master)} tracks to data/processed/master.parquet")
+```
+
+### Final Dataset Summary
+
+After ingestion and preparation, we have 2 datasets. The audio dataset contains 9,854 tracks with complete Spotify audio features and decade labels, covering all five decades from the 1980s to the 2020s with a maximum of 2,000 tracks per decade. The master dataset contains 9,176 tracks that additionally have lyrical embeddings available, representing the intersection of the audio dataset with successfully scraped and embedded lyrics. 
+
+As mentioned earlier, we want to extensively study both lyrics and audio characteristics. This is why we have 2 dataset. The master dataset is used for all analyses requiring both modalities, while the full audio dataset is used for the audio-only classifier to maximize training data.
+
+| Dataset | N Songs | Features | Used For |
+|---------|---------|----------|----------|
+| Audio   | 9854 | 11 Spotify audio features | Audio decade classifier |
+| Master  | 9176  | Audio + lyrics combined | Combined classifier + analysis |
+
+Raw tracks loaded: 15147
+After dropping year: 15147
+After filtering: 15147
+After removing remaster: 13721
+After deduplication: 12983
+
+Decade distribution (before cap):
+decade
+1980s    2542
+1990s    3137
+2000s    3064
+2010s    1854
+2020s    2386
+
+Decade distribution (after cap):
+decade
+1980s    2000
+1990s    2000
+2000s    2000
+2010s    1854
+2020s    2000
+
+
+Before cap, the observations are not so extreme. However, to ensure fairness, it is still fine to do capping. The lowest is 2010s with 1854 records.
+
+Embedding coverage (ratio between the master dataset which has lyrics embeddings vs. audio dataset) is 93.1%.
+
+```{python}
+#| label: load-master
+#| echo: true
+audio_df = pd.read_parquet("data/processed/tracks_clean.parquet")
+master_df = pd.read_parquet("data/processed/master.parquet")
+
+print(f"Audio dataset:  {len(audio_df)} tracks")
+print(f"Master dataset: {len(master_df)} tracks")
+print(f"Embedding coverage: {len(master_df)/len(audio_df)*100:.1f}%")
+```
+
+### Analytical Tools
+
+<!-- [YOUR TEXT HERE]
+  Briefly describe:
+  - Python libraries used (spotipy, sentence-transformers, scikit-learn, XGBoost, etc.)
+  - Modeling approach overview (preview of three classifiers)
+  - Statistical methods used in EDA (summary stats, density plots, PCA, etc.)
+-->
+
+Data collection is handled through direct HTTP calls via the requests library to the Spotify Search API, Genius API, and MusicBrainz API, with beautifulsoup used for lyrics page scraping.  Data is managed with pandas and serialized using pyarrow. Lyrical embeddings are generated with the sentence-transformers library using the all-MiniLM-L6-v2 model. Exploratory analysis uses matplotlib, seaborn, and plotly for visualization, and scikit-learn for preprocessing and dimensionality reduction. 
+---
+
+## III. Preliminary Results
+
+<!-- [YOUR TEXT HERE — brief paragraph setting up what follows] -->
+
+### 3.1 Summary Statistics
+
+<!-- [YOUR TEXT HERE]
+  Summarize key statistics in prose:
+  - Final N per decade after cleaning
+  - Distribution of popularity scores
+  - Lyrics match rate
+  Do NOT print raw dataframe output.
+-->
+
+```{python}
+#| label: summary-stats
+#| echo: true
+
+master_df = pd.read_parquet("data/processed/master.parquet")
+emb_cols = [c for c in master_df.columns if c.startswith("emb_")]
+
+# counts per decade 
+decade_counts = master_df["decade"].value_counts().sort_index().reset_index()
+decade_counts.columns = ["Decade", "N Tracks"]
+
+# # popularity stats per decade
+# pop_stats = (
+#     master_df
+#     .groupby("decade")["popularity"]
+#     .agg(["mean", "median", "std"])
+#     .round(2)
+#     .reset_index()
+# )
+# pop_stats.columns = ["Decade", "Mean Popularity", "Median Popularity", "Std"]
+
+# lyrics length stats 
+master_df["lyric_word_count"] = master_df["lyrics"].dropna().apply(
+    lambda x: len(str(x).split())
+)
+lyric_stats = (
+    master_df
+    .dropna(subset=["lyric_word_count"])
+    .groupby("decade")["lyric_word_count"]
+    .agg(["mean", "median"])
+    .round(1)
+    .reset_index()
+)
+lyric_stats.columns = ["Decade", "Mean Word Count", "Median Word Count"]
+
+# musicBrainz coverage 
+mb_coverage = (
+    master_df
+    .groupby("decade")["mb_country"]
+    .apply(lambda x: f"{x.notna().sum()} ({100*x.notna().mean():.0f}%)")
+    .reset_index()
+)
+mb_coverage.columns = ["Decade", "MusicBrainz Coverage"]
+
+# merge all into one summary table 
+summary = (
+    decade_counts
+    .merge(lyric_stats, on="Decade")
+    .merge(mb_coverage, on="Decade")
+)
+
+summary.style\
+    .set_caption("Table 1: Summary statistics of the master dataset by decade")\
+    .format(precision=2)\
+    .hide(axis="index")
+```
+
+```{python}
+print(master_df.groupby("decade")["popularity"].apply(lambda x: f"{x.notna().sum()}/{len(x)} ({100*x.notna().mean():.0f}%)"))
+```
+
+
+
+### 3.2 Lyric word count distribution by decade
+
+<!-- [YOUR TEXT HERE]
+  Describe what you see in the ridge plots below.
+  Highlight: loudness war in 2000s, acousticness decline, energy shifts.
+-->
+
+```{python}
+#| label: wordcount-by-decade
+#| echo: true
+#| fig-cap: "Lyric word count distribution by decade"
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+decade_order = ["1980s", "1990s", "2000s", "2010s", "2020s"]
+palette = sns.color_palette("muted", n_colors=5)
+
+fig, ax = plt.subplots(figsize=(10, 5))
+sns.violinplot(
+    data=master_df.dropna(subset=["lyric_word_count"]),
+    x="decade", y="lyric_word_count",
+    order=decade_order,
+    palette=palette,
+    inner="quartile",
+    linewidth=0.8,
+    ax=ax
+)
+ax.set_xlabel("Decade")
+ax.set_ylabel("Word Count")
+ax.set_title("Lyric Word Count Distribution by Decade")
+ax.set_ylim(0, 2000)
+plt.tight_layout()
+plt.show()
+```
+
+### 3.3 PCA of Audio Feature Space
+
+<!-- [YOUR TEXT HERE]
+  Describe the PCA plot. Do 80s and 2020s overlap?
+  This is your "scientific proof" that a classifier is needed.
+-->
+
+```{python}
+#| label: tfidf-words
+#| echo: true
+#| fig-cap: "Top TF-IDF terms per decade"
+
+from sklearn.feature_extraction.text import TfidfVectorizer
+import numpy as np
+
+decade_order = ["1980s", "1990s", "2000s", "2010s", "2020s"]
+
+# one big document per decade
+decade_docs = {
+    d: " ".join(master_df[master_df["decade"] == d]["lyrics"].dropna().tolist())
+    for d in decade_order
+}
+
+vectorizer = TfidfVectorizer(
+    max_features=5000,
+    stop_words="english",
+    min_df=2,
+    ngram_range=(1, 2)   # unigrams + bigrams to catch phrases
+)
+tfidf_matrix = vectorizer.fit_transform(list(decade_docs.values()))
+feature_names = vectorizer.get_feature_names_out()
+
+fig, axes = plt.subplots(1, 5, figsize=(22, 6))
+
+for i, (decade, ax) in enumerate(zip(decade_order, axes)):
+    scores = tfidf_matrix[i].toarray().flatten()
+    top_idx = np.argsort(scores)[::-1][:15]
+    top_words = [feature_names[j] for j in top_idx]
+    top_scores = [scores[j] for j in top_idx]
+
+    ax.barh(top_words[::-1], top_scores[::-1], color=palette[i])
+    ax.set_title(decade, fontsize=12, fontweight="bold")
+    ax.set_xlabel("TF-IDF Score", fontsize=9)
+    ax.tick_params(labelsize=8)
+
+fig.suptitle("Top Lyrical Terms by Decade (TF-IDF)", fontsize=14, y=1.02)
+plt.tight_layout()
+plt.show()
+```
+Without stop words, 
+
+```{python}
+#| label: tfidf-words
+#| echo: true
+#| fig-cap: "Top TF-IDF terms per decade"
+
+from sklearn.feature_extraction.text import TfidfVectorizer, ENGLISH_STOP_WORDS
+import numpy as np
+
+decade_order = ["1980s", "1990s", "2000s", "2010s", "2020s"]
+
+# Custom lyrics-specific stopwords on top of sklearn's English list
+LYRICS_STOPWORDS = set(ENGLISH_STOP_WORDS).union({
+    # filler words
+    "oh", "yeah", "ooh", "ah", "uh", "na", "la", "hey", "ha",
+    "woah", "whoa", "mmm", "hm", "gonna", "wanna", "gotta",
+    "ain", "ain't", "don", "don't", "didn", "didn't", "won",
+    "won't", "can't", "couldn", "couldn't", "isn", "isn't",
+    # generic lyric words that appear in every decade equally
+    "know", "like", "just", "got", "get", "let", "come",
+    "go", "say", "said", "want", "need", "love", "baby",
+    "time", "way", "day", "night", "life", "heart", "feel",
+    "make", "take", "give", "look", "away", "back", "right",
+    "ll", "ve", "re", "em", "cause", "til", "bout",
+    # chorus repetition artifacts
+    "chorus", "verse", "bridge", "hook", "repeat",
+    "x2", "x3", "x4",
+})
+
+decade_docs = {
+    d: " ".join(master_df[master_df["decade"] == d]["lyrics"].dropna().tolist())
+    for d in decade_order
+}
+
+vectorizer = TfidfVectorizer(
+    max_features=5000,
+    stop_words=list(LYRICS_STOPWORDS),
+    min_df=2,
+    ngram_range=(1, 2)
+)
+tfidf_matrix = vectorizer.fit_transform(list(decade_docs.values()))
+feature_names = vectorizer.get_feature_names_out()
+
+fig, axes = plt.subplots(1, 5, figsize=(22, 6))
+
+for i, (decade, ax) in enumerate(zip(decade_order, axes)):
+    scores = tfidf_matrix[i].toarray().flatten()
+    top_idx = np.argsort(scores)[::-1][:15]
+    top_words = [feature_names[j] for j in top_idx]
+    top_scores = [scores[j] for j in top_idx]
+
+    ax.barh(top_words[::-1], top_scores[::-1], color=palette[i])
+    ax.set_title(decade, fontsize=12, fontweight="bold")
+    ax.set_xlabel("TF-IDF Score", fontsize=9)
+    ax.tick_params(labelsize=8)
+
+fig.suptitle("Top Lyrical Terms by Decade (TF-IDF)", fontsize=14, y=1.02)
+plt.tight_layout()
+plt.show()
+```
+
+
+```{python}
+#| label: country-by-decade
+#| echo: true
+#| fig-cap: "Top artist countries of origin by decade"
+
+fig, axes = plt.subplots(1, 5, figsize=(22, 5))
+
+for i, (decade, ax) in enumerate(zip(decade_order, axes)):
+    subset = master_df[master_df["decade"] == decade]
+    top_countries = (
+        subset["mb_country"]
+        .dropna()
+        .value_counts()
+        .head(8)
+    )
+    ax.barh(top_countries.index[::-1], top_countries.values[::-1], color=palette[i])
+    ax.set_title(decade, fontsize=12, fontweight="bold")
+    ax.set_xlabel("N Artists", fontsize=9)
+    ax.tick_params(labelsize=8)
+
+fig.suptitle("Top Artist Countries of Origin by Decade", fontsize=14, y=1.02)
+plt.tight_layout()
+plt.show()
+```
+
+```{python}
+#| label: wordcount-over-time
+#| echo: true
+#| fig-cap: "Mean lyric word count over time"
+
+yearly = (
+    master_df
+    .dropna(subset=["lyric_word_count", "release_year"])
+    .groupby("release_year")["lyric_word_count"]
+    .agg(["mean", "median", "count"])
+    .reset_index()
+)
+
+# only keep years with at least 10 songs for stability
+yearly = yearly[yearly["count"] >= 10]
+
+fig, ax = plt.subplots(figsize=(12, 5))
+
+ax.plot(yearly["release_year"], yearly["mean"],
+        color="#4C9BE8", linewidth=2, label="Mean")
+ax.plot(yearly["release_year"], yearly["median"],
+        color="#E8774C", linewidth=2, linestyle="--", label="Median")
+ax.fill_between(yearly["release_year"], yearly["mean"], yearly["median"],
+                alpha=0.15, color="#4C9BE8")
+
+# shade decade bands
+for start, end, label in [(1980,1990,"1980s"),(1990,2000,"1990s"),
+                           (2000,2010,"2000s"),(2010,2020,"2010s"),(2020,2027,"2020s")]:
+    ax.axvspan(start, end, alpha=0.05,
+               color=palette[["1980s","1990s","2000s","2010s","2020s"].index(label)])
+    ax.text((start+end)/2, ax.get_ylim()[0], label,
+            ha="center", va="bottom", fontsize=8, color="gray")
+
+ax.set_xlabel("Release Year")
+ax.set_ylabel("Word Count")
+ax.set_title("Mean Lyric Word Count Over Time")
+ax.legend()
+plt.tight_layout()
+plt.show()
+```
+
+```{python}
+#| label: umap-embeddings
+#| echo: true
+#| fig-cap: "UMAP projection of lyrical embeddings colored by decade"
+
+import umap
+import plotly.express as px
+
+emb_cols = [c for c in master_df.columns if c.startswith("emb_")]
+X = master_df[emb_cols].values
+labels = master_df["decade"].values
+
+reducer = umap.UMAP(n_components=2, random_state=42, n_neighbors=15, min_dist=0.1)
+embedding_2d = reducer.fit_transform(X)
+
+umap_df = pd.DataFrame({
+    "UMAP1":       embedding_2d[:, 0],
+    "UMAP2":       embedding_2d[:, 1],
+    "decade":      master_df["decade"].values,
+    "track_name":  master_df["track_name"].values,
+    "artist_name": master_df["artist_name"].values,
+})
+
+fig = px.scatter(
+    umap_df, x="UMAP1", y="UMAP2",
+    color="decade",
+    hover_data=["track_name", "artist_name"],
+    opacity=0.5,
+    title="UMAP Projection of Lyrical Embeddings by Decade",
+    color_discrete_sequence=px.colors.qualitative.Pastel,
+    category_orders={"decade": decade_order}
+)
+fig.update_traces(marker=dict(size=3))
+fig.update_layout(legend_title="Decade")
+fig.show()
+```
+
+### 3.4 Lyrical Era Markers: TF-IDF Word Analysis
+
+<!-- [YOUR TEXT HERE]
+  Describe the top words per decade.
+  Highlight interesting era markers: "cassette" vs "DM", "fax" vs "TikTok"
+-->
+
+```{python}
+#| label: tfidf-words
+#| echo: true
+#| fig-cap: "Top TF-IDF terms per decade"
+
+# [YOUR CODE HERE]
+# TfidfVectorizer per decade
+# Bar charts or word clouds showing top terms per decade
+```
+
+### 3.5 Preliminary Classification Results
+
+<!-- [YOUR TEXT HERE]
+  Describe the confusion matrix results.
+  Which decades are most confused with each other?
+  Where does the audio model predict the wrong era for modern songs?
+-->
+
+```{python}
+#| label: prelim-confusion
+#| echo: true
+#| fig-cap: "Confusion matrix: Audio Model decade predictions"
+
+# [YOUR CODE HERE]
+# Train a quick logistic regression baseline on audio features
+# Plot confusion matrix as heatmap
+```
+
+### 3.6 Nostalgia Sells? Popularity by Misclassification
+
+<!-- [YOUR TEXT HERE]
+  Describe the density plot.
+  Are misclassified modern songs more popular than correctly classified ones?
+  Preliminary evidence for/against the secondary hypothesis.
+-->
+
+```{python}
+#| label: popularity-density
+#| echo: true
+#| fig-cap: "Popularity distribution: correctly vs. misclassified modern songs"
+
+# [YOUR CODE HERE]
+# Subset to 2010s + 2020s songs
+# Label: correctly classified vs. predicted as 80s/90s
+# Density plot of popularity scores for both groups
+```
+
+---
+
+## IV. Summary & Final Project Plan
+
+<!-- [YOUR TEXT HERE]
+  Summarize what you have found so far:
+  - Do audio features carry decade signal? (yes/no, what features?)
+  - Do lyrical clusters align with audio clusters? (preliminary answer)
+  - Any early evidence for the nostalgia hypothesis?
+-->
+
+### Key Findings So Far
+
+<!-- [YOUR TEXT HERE] -->
+
+### Final Project Plan
+
+#### II. Data Modeling
+
+##### 1. Splitting the Dataset
+
+<!-- [YOUR TEXT HERE]
+  - 70/15/15 stratified split
+  - Artist-level leakage prevention: all songs by one artist go to same split
+  - Why this matters: prevents model from memorizing artist style
+-->
+
+##### 2. Training the Models
+
+<!-- [YOUR TEXT HERE]
+  Three parallel classifiers:
+  - Audio Model: logistic regression baseline + XGBoost on 11 audio features
+  - Lyric Model: PCA(50) on 384-dim embeddings + XGBoost
+  - Combined Model: concatenated feature vector
+  5-fold cross-validated grid search for hyperparameters
+-->
+
+##### 3. Validation
+
+<!-- [YOUR TEXT HERE]
+  - Macro F1 as primary metric (class imbalance)
+  - Early stopping for XGBoost
+  - Per-class F1 to identify hardest decades
+-->
+
+#### III. Performance Evaluation
+
+<!-- [YOUR TEXT HERE]
+  - Confusion matrices for all three models
+  - SHAP values for feature importance
+  - "Sonic Time Traveler" score: |audio_predicted_decade - lyric_predicted_decade|
+    Example: Audio says 1980s, Lyrics say 2020s → score = 40 years
+  - Nostalgia sells test: t-test + Cohen's d on popularity scores
+  - ARI between audio and lyric cluster assignments
+  - UMAP projections colored by true decade, predicted decade, Time Traveler score
+-->
+
+#### IV. Interaction Component
+
+<!-- [YOUR TEXT HERE]
+  Three interactive components on the final Quarto website:
+  1. "What Era Does This Song Belong To?" — user inputs Spotify URL, 
+     gets predicted decade + confidence bar chart
+  2. "Sonic Time Traveler" Explorer — interactive UMAP scatter plot,
+     hover reveals song name, true era, audio-predicted era, lyric-predicted era
+  3. Nostalgia Leaderboard — sortable table of top 50 highest Time Traveler score songs
+-->
+
+---
+
+## References
+
+<!-- [YOUR TEXT HERE]
+  - Spotify Web API documentation: https://developer.spotify.com/documentation/web-api
+  - MusicBrainz API documentation: https://musicbrainz.org/doc/MusicBrainz_API
+  - Genius API
+  - sentence-transformers / all-MiniLM-L6-v2
+  - Any academic papers on music information retrieval or cultural era analysis
+-->
