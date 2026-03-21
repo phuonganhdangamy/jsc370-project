@@ -1,0 +1,9 @@
+Spotify fetch audio feature is deprecated
+
+Feature engineering from lyrics
+- rhyme density
+- repetition ratio
+- sentiment score 
+- language detection
+
+

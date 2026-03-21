@@ -182,7 +182,7 @@ decade_queries = {
 #| eval: false
 #| echo: false
 class RateLimiter:
-    """Simple token bucket — max 10 requests per 30 seconds to stay safe"""
+    """Simple token bucket - max 10 requests per 30 seconds to stay safe"""
     def __init__(self, max_calls=10, period=30):
         self.max_calls = max_calls
         self.period = period
@@ -482,6 +482,158 @@ def clean_track_name(name):
 #| eval: false
 #| echo: false
 print(f"Token: {GENIUS_TOKEN[:20] if GENIUS_TOKEN else 'NOT FOUND - IS NONE'}")
+```
+
+```{python}
+import pandas as pd
+
+pv_file = "data/raw/pageviews.parquet"
+pv_csv = "data/raw/pageviews.csv"
+df = pd.read_parquet(pv_file)
+
+# Keep only rows with real pageview numbers (or you can keep nonzero per your policy)
+df_clean = df[df["pageviews"].notna()].copy()
+
+print("Before:", len(df), "After cleanup:", len(df_clean))
+print("Dropped:", len(df) - len(df_clean))
+
+df_clean.to_parquet(pv_file, index=False)
+df_clean.to_csv(pv_csv, index=False)
+```
+
+```{python}
+#| label: fetch-pageviews
+#| echo: true
+
+import time
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+GENIUS_TOKEN = os.environ.get("GENIUS_ACCESS_TOKEN")
+GENIUS_HEADERS = {"Authorization": f"Bearer {GENIUS_TOKEN}"}
+
+def get_genius_session():
+    """Create a requests session with retry strategy."""
+    session = requests.Session()
+    retry_strategy = Retry(
+        total=3,
+        backoff_factor=1,  # 1s, 2s, 4s between retries
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["GET", "POST"]
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
+
+session = get_genius_session()
+
+def get_genius_pageviews(artist_name, track_name, genius_url):
+    """Fetch pageviews from Genius API with retry logic."""
+    try:
+        # Step 1: search for the song
+        res = session.get(
+            "https://api.genius.com/search",
+            headers={"Authorization": f"Bearer {GENIUS_TOKEN}"},
+            params={"q": f"{artist_name} {track_name}"},
+            timeout=30  # increased from 10
+        )
+        if res.status_code != 200:
+            return None
+        
+        hits = res.json().get("response", {}).get("hits", [])
+        if not hits:
+            return None
+        
+        # match against the URL we already have
+        song_id = None
+        for hit in hits:
+            if hit["result"].get("url") == genius_url:
+                song_id = hit["result"]["id"]
+                break
+        
+        # fallback: just take first result
+        if not song_id and hits:
+            song_id = hits[0]["result"]["id"]
+        
+        if not song_id:
+            return None
+
+        # Step 2: fetch song details
+        detail_res = session.get(
+            f"https://api.genius.com/songs/{song_id}",
+            headers={"Authorization": f"Bearer {GENIUS_TOKEN}"},
+            params={"text_format": "plain"},
+            timeout=30  
+        )
+        if detail_res.status_code != 200:
+            return None
+
+        song_data = detail_res.json().get("response", {}).get("song", {})
+        pageviews = song_data.get("stats", {}).get("pageviews")
+        return (pageviews, song_id)
+        
+    except requests.exceptions.Timeout:
+        print(f"  [TIMEOUT] {artist_name} - {track_name}")
+        return None
+    except Exception as e:
+        print(f"  [ERROR] {artist_name} - {track_name}: {e}")
+        return None
+
+# Load tracks with genius URLs
+lyrics_df = pd.read_parquet("data/raw/lyrics_raw.parquet")
+lyrics_df = lyrics_df[lyrics_df["has_lyrics"] == True].reset_index(drop=True)
+print(f"Total tracks with lyrics: {len(lyrics_df)}")
+
+# Resume support
+pv_file = "data/raw/pageviews.parquet"
+if os.path.exists(pv_file):
+    existing_pv = pd.read_parquet(pv_file)
+    fetched_ids = set(existing_pv["track_id"].tolist())
+    print(f"Resuming, already fetched: {len(fetched_ids)}")
+else:
+    existing_pv = pd.DataFrame()
+    fetched_ids = set()
+
+remaining_tracks = lyrics_df[~lyrics_df["track_id"].isin(fetched_ids)].reset_index(drop=True)
+print(f"Remaining: {len(remaining_tracks)}")
+
+pv_results = []
+
+for i, row in enumerate(remaining_tracks.itertuples()):
+    result = get_genius_pageviews(row.artist_name, row.track_name, row.genius_url)
+
+    pageviews = result[0] if result else None
+    
+    pv_results.append({
+        "track_id": row.track_id,
+        "pageviews": pageviews,
+    })
+    
+    status = f"{pageviews:,}" if pageviews else "None"
+    print(f"[{i+1}/{len(remaining_tracks)}] {row.track_name} | pageviews: {status}")
+    
+    # Save checkpoint every 500 tracks
+    if (i + 1) % 500 == 0:
+        checkpoint = pd.concat(
+            [existing_pv, pd.DataFrame(pv_results)],
+            ignore_index=True
+        ).drop_duplicates(subset="track_id")
+        checkpoint.to_parquet(pv_file, index=False)
+        print(f"  Checkpoint: {len(checkpoint)} tracks saved | batch {i+1}/{len(remaining_tracks)}\n")
+
+    time.sleep(0.5)  # rate limiting
+
+# Final save
+final_pv = pd.concat(
+    [existing_pv, pd.DataFrame(pv_results)],
+    ignore_index=True
+).drop_duplicates(subset="track_id")
+
+final_pv.to_parquet(pv_file, index=False)
+print(f"\nSaved pageviews for {len(final_pv)} tracks")
+print(f"Tracks with pageview data: {final_pv['pageviews'].notna().sum()}")
 ```
 
 ```{python}
