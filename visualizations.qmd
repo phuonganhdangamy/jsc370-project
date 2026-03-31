@@ -1,0 +1,17 @@
+---
+title: "Explore the Data"
+---
+```{python}
+#| include: false
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+from sklearn.feature_extraction.text import TfidfVectorizer, ENGLISH_STOP_WORDS
+import numpy as np
+
+master_df = pd.read_parquet("data/processed/master.parquet")
+decade_order = ["1980s", "1990s", "2000s", "2010s", "2020s"]
+master_df["lyric_word_count"] = master_df["lyrics"].dropna().apply(lambda x: len(str(x).split()))
+master_df["genre"] = master_df["seed_query"].str.extract(r"^(\w+(?:\s\w+)?)\s+year:")
+```
+

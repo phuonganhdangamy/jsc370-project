@@ -1,0 +1,46 @@
+project:
+  type: website
+  output-dir: "docs"       
+  render:
+    - final_report.qmd
+    - index.qmd
+    - visualizations.qmd
+    - results.qmd
+    - era-classifier.qmd
+
+website:
+  title: "Sonic Time Travelers"
+  navbar:
+    left:
+      - text: "Home"
+        href: index.qmd
+      - text: "Explore Data"
+        href: visualizations.qmd
+      - text: "Model Results"
+        href: results.qmd
+      - text: "Try the Classifier"
+        href: era-classifier.qmd
+    right:
+      - text: "📄 Report"
+        href: report.pdf
+        target: _blank
+      - icon: github
+        href: https://github.com/phuonganhdangamy/jsc370-project
+  page-footer:
+    center: "Amy Dang | JSC370 | University of Toronto | 2026"
+
+format:
+  html:
+    theme: [cosmo, styles.css]
+    toc: true
+    toc-depth: 3
+    toc-title: "On this page"
+    code-fold: true
+    code-summary: "Show code"
+
+execute:
+  echo: true
+  warning: false
+  message: false
+
+jupyter: jsc370-venv

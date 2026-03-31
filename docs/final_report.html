@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.8.26">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>Sonic Time Travelers: Can a Song’s Identity Place It in Its Era? – Sonic Time Travelers</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<script src="site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="site_libs/quarto-html/axe/axe-check.js" type="module"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-587c61ba64f3a5504c4d52d930310e48.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap-a13d9807c4567286ce7a414117ac4c47.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+
+</head>
+
+<body class="nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="./index.html">
+    <span class="navbar-title">Sonic Time Travelers</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item">
+    <a class="nav-link" href="./index.html"> 
+<span class="menu-text">Home</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="./visualizations.html"> 
+<span class="menu-text">Explore Data</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="./results.html"> 
+<span class="menu-text">Model Results</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="./era-classifier.html"> 
+<span class="menu-text">Try the Classifier</span></a>
+  </li>  
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item">
+    <a class="nav-link" href="./report.pdf" target="_blank"> 
+<span class="menu-text">📄 Report</span></a>
+  </li>  
+  <li class="nav-item compact">
+    <a class="nav-link" href="https://github.com/phuonganhdangamy/jsc370-project"> <i class="bi bi-github" role="img">
+</i> 
+<span class="menu-text"></span></a>
+  </li>  
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#github-repo" id="toc-github-repo" class="nav-link active" data-scroll-target="#github-repo">0. GitHub Repo:</a></li>
+  <li><a href="#i.-introduction" id="toc-i.-introduction" class="nav-link" data-scroll-target="#i.-introduction">I. Introduction</a>
+  <ul class="collapse">
+  <li><a href="#research-question" id="toc-research-question" class="nav-link" data-scroll-target="#research-question">Research Question</a></li>
+  <li><a href="#hypotheses" id="toc-hypotheses" class="nav-link" data-scroll-target="#hypotheses">Hypotheses</a></li>
+  <li><a href="#novelty" id="toc-novelty" class="nav-link" data-scroll-target="#novelty">Novelty</a></li>
+  </ul></li>
+  <li><a href="#ii.-methods" id="toc-ii.-methods" class="nav-link" data-scroll-target="#ii.-methods">II. Methods</a>
+  <ul class="collapse">
+  <li><a href="#data-sources" id="toc-data-sources" class="nav-link" data-scroll-target="#data-sources">Data Sources</a></li>
+  <li><a href="#data-acquisition" id="toc-data-acquisition" class="nav-link" data-scroll-target="#data-acquisition">Data Acquisition</a></li>
+  <li><a href="#final-dataset-summary" id="toc-final-dataset-summary" class="nav-link" data-scroll-target="#final-dataset-summary">Final Dataset Summary</a></li>
+  <li><a href="#analytical-tools" id="toc-analytical-tools" class="nav-link" data-scroll-target="#analytical-tools">Analytical Tools</a></li>
+  </ul></li>
+  <li><a href="#iv.-summary-final-project-plan" id="toc-iv.-summary-final-project-plan" class="nav-link" data-scroll-target="#iv.-summary-final-project-plan">IV. Summary &amp; Final Project Plan</a>
+  <ul class="collapse">
+  <li><a href="#key-findings-so-far" id="toc-key-findings-so-far" class="nav-link" data-scroll-target="#key-findings-so-far">Key Findings So Far</a></li>
+  <li><a href="#final-project-plan" id="toc-final-project-plan" class="nav-link" data-scroll-target="#final-project-plan">Final Project Plan</a></li>
+  </ul></li>
+  <li><a href="#final-report-nostalgia-sells---do-modern-songs-sound-like-theyre-from-the-80s" id="toc-final-report-nostalgia-sells---do-modern-songs-sound-like-theyre-from-the-80s" class="nav-link" data-scroll-target="#final-report-nostalgia-sells---do-modern-songs-sound-like-theyre-from-the-80s">Final Report: Nostalgia Sells - Do Modern Songs Sound Like They’re from the 80s?</a></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Sonic Time Travelers: Can a Song’s Identity Place It in Its Era?</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<hr>
+<section id="github-repo" class="level2">
+<h2 class="anchored" data-anchor-id="github-repo">0. GitHub Repo:</h2>
+<p>https://github.com/phuonganhdangamy/jsc370-project</p>
+</section>
+<section id="i.-introduction" class="level2">
+<h2 class="anchored" data-anchor-id="i.-introduction">I. Introduction</h2>
+<p>The project is motivated by a cultural observation: just as fashion cycles repeat themselves, music appears to be so as well. Some artists are frequently noted for their retro aesthetics despite being comtemporary acts. There is a term in marketing called “nostalgia sells”: a strategy in marketing/creative that promotes products with characteristics that could evoke emotional feelings from customers so that they will make the purchase decision more easily.</p>
+<p>This sparks curiosity on whether this phenomenon of having a retro is statistically measurable and whether it correlates with commercial succes, or is lyrical music timeless and doesn’t change over time?</p>
+<section id="research-question" class="level3">
+<h3 class="anchored" data-anchor-id="research-question">Research Question</h3>
+<blockquote class="blockquote">
+<p><em>““Can a song’s lyrical identity reliably place it in its era, and do modern songs whose lyrics read as vintage actually sell better?”“</em></p>
+</blockquote>
+</section>
+<section id="hypotheses" class="level3">
+<h3 class="anchored" data-anchor-id="hypotheses">Hypotheses</h3>
+<p>We have some predictions regarding the outcome of our study:</p>
+<p><strong>Primary Hypothesis:</strong> Lyrical embeddings carry meaningful decade signal and a classifier trained on them will perform above chance, but adjacent decades, particularly the 1990s-2000s or the 2010s-2020s will be systematically confused due to shared vocabulary and thematic overlap.</p>
+<p><strong>Secondary Hypothesis:</strong> Modern songs from the 2010s and 2020s that are misclassified as belonging to the 1980s or 1990s will be more popular than correctly classified modern songs, supporting a “nostalgia sells” theory</p>
+</section>
+<section id="novelty" class="level3">
+<h3 class="anchored" data-anchor-id="novelty">Novelty</h3>
+<p>Most existing work using Spotify data relies on static Kaggle datasets and focuses on audio features alone, ignoring the lyrical dimension entirely. This project is distinctive because:</p>
+<ul>
+<li><p>All data is collected live through API calls rather than downloaded as a pre-assembled dataset, giving us full control over sampling strategy and decade balance.</p></li>
+<li><p>We integrate multiple data sources like Spotify for metadata, Genius for lyrics, and MusicBrainz for artist cultural context into a unified analysis.</p></li>
+</ul>
+<hr>
+</section>
+</section>
+<section id="ii.-methods" class="level2">
+<h2 class="anchored" data-anchor-id="ii.-methods">II. Methods</h2>
+<section id="data-sources" class="level3">
+<h3 class="anchored" data-anchor-id="data-sources">Data Sources</h3>
+<p>In order to answer all aspects of the research question, we collect and combine data from different sources:</p>
+<ol type="1">
+<li>Spotify Web API</li>
+</ol>
+<ul>
+<li><p>Documentation: https://developer.spotify.com/documentation/web-api</p></li>
+<li><p>Purpose: Track metadata and decade labeling</p></li>
+<li><p>What we collect: track ID, track name, artist name, album ID, release date, and popularity score</p></li>
+<li><p>Method: Search API queries by decade and genre keyword. For example, we query 80s rock tracks by calling <code>rock year:1980-1989</code>. Then pull the results by batches of 10. To respect Spotify’s API rate limits (~5.5k records/day), we split the data collection process into 3-4 days to account for code bugs or unexpected failures.</p></li>
+</ul>
+<ol start="2" type="1">
+<li>Genius API + Web Scraping</li>
+</ol>
+<ul>
+<li><p>Documentation: https://docs.genius.com/</p></li>
+<li><p>Purpose: Song lyrics for lyrical embedding</p></li>
+<li><p>What we collect: Raw lyrics for each track, scraped from Genius song pages after searching by artist name and track name via the Genius search API</p></li>
+<li><p>Method: First, we query the Genius search API to find the lyrics URL. Then, we will scrape the lyrics page using BeautifulSoup. After that, the scraped lyrics are cleaned by removing section headers such as [Verse 1], non-ASCII characters, and excess whitespace using regex. Cleaning will help further steps easier.</p></li>
+</ul>
+<ol start="3" type="1">
+<li>MusicBrainz API</li>
+</ol>
+<ul>
+<li><p>Documentation: https://musicbrainz.org/doc/MusicBrainz_API</p></li>
+<li><p>Purpose: Cultural enrichment and enhancing knowledge about the artists.</p></li>
+<li><p>What we collect: artis country (mb_country), area of origin (mb_area), city of origin (mb_begin_area), match confidence score (mb_score) community tags, and genre tags.</p></li>
+<li><p>Method: We search by artist name, then fetch the full artist record with tags. We have to put on rate limit to respect MusicBrainz policy. The artist names come from previously fetched spotify dataset, so to safe time, this collection process will run after every daily spotify collection, then append to the “master file”. Match confidence score is retained to filter low-quality matches.</p></li>
+</ul>
+</section>
+<section id="data-acquisition" class="level3">
+<h3 class="anchored" data-anchor-id="data-acquisition">Data Acquisition</h3>
+<section id="step-1-seed-artists-via-decade-playlists" class="level4">
+<h4 class="anchored" data-anchor-id="step-1-seed-artists-via-decade-playlists">Step 1: Seed Artists via Decade Playlists</h4>
+<p>Data collection begins with a playlist-seeding strategy using Spotify’s curated decade playlists as entry points. For each decade from the 1980s to the 2020s, we identified four playlists covering distinct genre branches to ensure the resulting artist pool is not dominated by a single style. Rock, Pop, and Hip Hop are sampled consistently across all five decades given their sustained cultural presence, while decade-specific genres such as Dance (1980s), RnB (1990s), Country (2000s), EDM (2010s), and Latin (2020s) are included to capture the unique sonic flavors of each era.</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Decade</th>
+<th>Genre</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>1980s</td>
+<td>Rock, Pop, Hip Hop, Dance</td>
+</tr>
+<tr class="even">
+<td>1990s</td>
+<td>Rock, Pop, Hip Hop, RnB</td>
+</tr>
+<tr class="odd">
+<td>2000s</td>
+<td>Rock, Pop, Hip Hop, Country</td>
+</tr>
+<tr class="even">
+<td>2010s</td>
+<td>Rock, Pop, Hip Hop, EDM</td>
+</tr>
+<tr class="odd">
+<td>2020s</td>
+<td>Rodck, Pop, Hip Hop, Latin</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="step-2-musicbrainz-enrichment" class="level4">
+<h4 class="anchored" data-anchor-id="step-2-musicbrainz-enrichment">Step 2: MusicBrainz Enrichment</h4>
+<p>To supplement Spotify’s metadata with cultural context, we query the MusicBrainz API for each unique artist in our dataset. MusicBrainz is an open-source community-maintained music encyclopedia that provides structured data not available through Spotify, including the artist’s country of origin, the city or region they are associated with, and community-contributed genre and style tags.</p>
+<p>For each artist, we perform a name-based search to retrieve the MusicBrainz artist ID, then make a detailed record fetch with tags and genres included. A match confidence score is returned with each search result and retained for downstream filtering. MusicBrainz enforces a strict rate limit of one request per second, which is respected using a fixed 1.1-second sleep between calls.</p>
+<p>The resulting enrichment covers artist origin country, broader area, city of origin, and pipe-separated tag and genre strings.</p>
+</section>
+<section id="step-3-lyrics-via-genius" class="level4">
+<h4 class="anchored" data-anchor-id="step-3-lyrics-via-genius">Step 3: Lyrics via Genius</h4>
+<p>Lyrics are retrieved for each track in our Spotify dataset. For each track, we first query the Genius API using the cleaned artist name and track name to obtain the lyrics page URL. Then we scrpae the page content using BeautifulSoup. Track names are pre-cleaned before querying by stripping parenthetical annotations such as “(Remastered)” or “(feat. Artist)” which tend to confuse the search results.</p>
+<p>Songs returning fewer than 20 words after cleaning are treated as failed scrapes. A checkpoint is saved every 500 tracks so the pipeline is fully resumable in the event of interruption or API failure.</p>
+</section>
+<section id="step-4-fetch-page-views-via-genius" class="level4">
+<h4 class="anchored" data-anchor-id="step-4-fetch-page-views-via-genius">Step 4: Fetch page views via Genius</h4>
+<p>This is a new step added after the initial proposal to provide a more direct measure of the “nostalgia sells” hypothesis. For each track with a successfully scraped Genius page, we will query the Genius API for the song’s page views as a proxy for popularity and listener engagement. The page views metric captures how many times the song’s Genius page has been viewed, which can reflect both the song’s popularity and the level of listener interest in its lyrics. We will analyze whether modern songs misclassified as vintage have higher page views than those correctly classified, providing evidence for or against the nostalgia sells theory.</p>
+</section>
+<section id="step-5-lyrical-embeddings" class="level4">
+<h4 class="anchored" data-anchor-id="step-5-lyrical-embeddings">Step 5: Lyrical Embeddings</h4>
+<p>To represent lyrics as numerical features suitable for machine learning, we use the <code>all-MiniLM-L6-v2</code> model from <code>sentence transformers</code> library to generate dense vector embeddings of each song’s full lyric text. This model maps variable-length text to a fixed vector that captures semantic meaning, making it possible to compare songs lyrically in a continuous embedding space regardless of exactly vocabulary differences. Embeddings will be cached to file after generation to save computation time later on.</p>
+</section>
+<section id="step-6-cleaning-and-labeling" class="level4">
+<h4 class="anchored" data-anchor-id="step-6-cleaning-and-labeling">Step 6: Cleaning and Labeling</h4>
+<p>With all raw data sources collected, we perform cleaning, decade labeling, and cross-source alignment in a single consolidated step. By cleaning after all fetching is complete, we avoid discarding tracks that may have failed one pipeline but could still contribute to the analysis.</p>
+<p>First, we clean the Spotify tracks. Release years are extracted and parsed, records outside the 1980 and 2026 range are removed, and tracks identified as remasters, live versions, or remixes via regex are filtered out. Deduplication retains only the earliest known release per artist and track name pair to preserve the song’s true era of origin. Decade labels are then assigned by binning release years into 5 categories. A stratified cap of 2000 songs per decade is applied to correct for the overrepresentation of the 2010s.</p>
+<p>The audio features, MusicBrainz, and lyrical embeddings are merged against the cleaned Spotify track list using track id and artist id. Tracks that failed MusicBrainz matching are retained in the audio and lyrics datasets with null rather than dropped, since country of origin is a supplementary feature than required. Tracks that failed Genius scraping are excluded only from the lyrics and master datasets but remain in the audio-only.</p>
+</section>
+</section>
+<section id="final-dataset-summary" class="level3">
+<h3 class="anchored" data-anchor-id="final-dataset-summary">Final Dataset Summary</h3>
+<p>After ingestion and preparation, the master dataset contains 9,176 tracks that additionally have lyrical embeddings available, representing the intersection of the audio dataset with successfully scraped and embedded lyrics.</p>
+<div id="tbl-cleaning" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-tbl figure">
+<figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-cleaning-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Table&nbsp;1: Data cleaning pipeline
+</figcaption>
+<div aria-describedby="tbl-cleaning-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Stage</th>
+<th>N Tracks</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Raw collected</td>
+<td>15,147</td>
+</tr>
+<tr class="even">
+<td>After remaster/live filter</td>
+<td>13,721</td>
+</tr>
+<tr class="odd">
+<td>After deduplication</td>
+<td>12,983</td>
+</tr>
+<tr class="even">
+<td>After stratified cap</td>
+<td>9,854</td>
+</tr>
+</tbody>
+</table>
+</div>
+</figure>
+</div>
+<div id="tbl-decades" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-tbl figure">
+<figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-decades-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Table&nbsp;2: Decade distribution before and after stratified cap
+</figcaption>
+<div aria-describedby="tbl-decades-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Decade</th>
+<th>Before Cap</th>
+<th>After Cap</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>1980s</td>
+<td>2,542</td>
+<td>2,000</td>
+</tr>
+<tr class="even">
+<td>1990s</td>
+<td>3,137</td>
+<td>2,000</td>
+</tr>
+<tr class="odd">
+<td>2000s</td>
+<td>3,064</td>
+<td>2,000</td>
+</tr>
+<tr class="even">
+<td>2010s</td>
+<td>1,854</td>
+<td>1,854</td>
+</tr>
+<tr class="odd">
+<td>2020s</td>
+<td>2,386</td>
+<td>2,000</td>
+</tr>
+</tbody>
+</table>
+</div>
+</figure>
+</div>
+<p>Before cap, the observations are not so different from each other. However, it is still fairer to do capping. The lowest is 2010s with 1854 records.</p>
+<p>Embedding coverage (ratio between the master dataset which has lyrics embeddings vs.&nbsp;audio dataset) is 93.1%.</p>
+</section>
+<section id="analytical-tools" class="level3">
+<h3 class="anchored" data-anchor-id="analytical-tools">Analytical Tools</h3>
+<ul>
+<li>Data collection is handled through direct HTTP calls via the requests library to the Spotify Search API, Genius API, and MusicBrainz API, with beautifulsoup used for lyrics page scraping. Data is managed with pandas and serialized using pyarrow. Lyrical embeddings are generated with the sentence-transformers library using the all-MiniLM-L6-v2 model. Exploratory analysis uses matplotlib, seaborn, and plotly for visualization, and scikit-learn for preprocessing and dimensionality reduction.</li>
+</ul>
+<hr>
+</section>
+</section>
+<section id="iv.-summary-final-project-plan" class="level2">
+<h2 class="anchored" data-anchor-id="iv.-summary-final-project-plan">IV. Summary &amp; Final Project Plan</h2>
+<section id="key-findings-so-far" class="level3">
+<h3 class="anchored" data-anchor-id="key-findings-so-far">Key Findings So Far</h3>
+<p>Our preliminary analysis of the lyrical corpus reveals several meaningful patterns that both support and complicate the central research question.</p>
+<p>On lyric length, we find a clear declining trend in mean word count from the 1980s through the 2020s, though this is driven primarily by the disappearance of long-form outliers in recent decades. Genre emerges as a stronger driver of lyric length than decade, with hip hop producing nearly double the word count of country and EDM, suggesting that the apparent temporal decline in lyric length partially reflects the changing genre composition of each decade rather than a pure shift in songwriting style.</p>
+<p>The TF-IDF analysis reveals decade-distinguishable vocabulary after aggressive stopword removal, with the 1980s characterized by rock and dance-era themes, the 1990s by the language of hip hop authenticity, and the 2010s by a more introspective vocabulary. However, the growing representation of Spanish in the corpus requires further attention and decision regarding how to process them.</p>
+<p>We have seen that songs cluster more strongly by genre than by decade, suggesting that a supervised classifier is necessary and motivating incorporating additional features in the final project, such as Spotify API’s audio features. (Due to technical constraints encountered during data collection (i.e., Spotify API rate limits under development mode that prevented reliable audio feature retrieval at scale), the current report is limited to lyrical features only.)</p>
+</section>
+<section id="final-project-plan" class="level3">
+<h3 class="anchored" data-anchor-id="final-project-plan">Final Project Plan</h3>
+<section id="ii.-data-modeling" class="level4">
+<h4 class="anchored" data-anchor-id="ii.-data-modeling">II. Data Modeling</h4>
+<section id="splitting-the-dataset" class="level5">
+<h5 class="anchored" data-anchor-id="splitting-the-dataset">1. Splitting the Dataset</h5>
+<p>The master dataset will be splitted into training, validation, and test sets using a stratified split to preserve decade class proportions across all three partitions. We will use a 70/15/15 train/validation/test split.</p>
+<p>We will also stratify data by artist to prevent leakage: All songs by a given artist will be assigned to the same split, ensuring the model cannot memorize artist style rather than era characteristics.</p>
+</section>
+<section id="training-the-models" class="level5">
+<h5 class="anchored" data-anchor-id="training-the-models">2. Training the Models</h5>
+<p>We will use supervised machine learning model to predict decade (5 classes: 1980s, 1990s, 2000s, 2010s, 2020s). Some models we will try are:</p>
+<ul>
+<li><p>Multinomial logistic regression: This will be a baseline, providing an interpretable lower bound on classification performance.</p></li>
+<li><p>XGBoost classifier: We expect it to capture the non-linear interactions in the embedding space that logistic regression cannot.</p></li>
+</ul>
+<p>For both models, PCA will be applied to reduce the 384-dimensional embeddings, balancing computational efficiency with information retention.</p>
+<p>Models will be trained and hyperparameter tuned according to the performance on validation set.</p>
+<p>We will additionally explore whether adding lyric_word_count, detected language, or artist country of origin as supplementary features improves decade prediction beyond embeddings alone.</p>
+</section>
+<section id="validation" class="level5">
+<h5 class="anchored" data-anchor-id="validation">3. Validation</h5>
+<p>For each model we will perform 5-fold cross-validated grid search over key hyperparameters (learning rate, max depth, number of estimators) for XGBoost, using the training set only.</p>
+<p>Macro-averaged F1 score will serve as the primary validation metric to account for class imbalance across decades. Per-class F1 scores will also be monitored to identify which decades are most difficult to classify. Early stopping will be applied during XGBoost training to prevent overfitting on the training fold.</p>
+</section>
+</section>
+<section id="iii.-performance-evaluation" class="level4">
+<h4 class="anchored" data-anchor-id="iii.-performance-evaluation">III. Performance Evaluation</h4>
+<p>Final evaluation will be performed once on the held-out test set after hyperparameter selection is complete. We will report macro and weighted F1, precision, and recall for both the logistic regression baseline and XGBoost model, alongside full confusion matrices to visualize systematic misclassification patterns across decades.</p>
+<p>The confusion matrix will be the main interest to answer our research question, by looking at the off-diagonal terms. SHAP values will be computed for the XGBoost model to identify which embedding dimensions most drive decade misclassification, and UMAP projections of the test set will be colored by true decade, predicted decade, and misclassification status to provide an interpretable visual summary of model behavior.</p>
+</section>
+<section id="iv.-interaction-component" class="level4">
+<h4 class="anchored" data-anchor-id="iv.-interaction-component">IV. Interaction Component</h4>
+<p>The final project will be published as a website.</p>
+<p>There will be a component called “What Era Do Your Lyrics Belong To?” tool where a user pastes any block of text or song lyrics and it returns a predicted decade with confidence scores across all five classes displayed as a bar chart.</p>
+<p>Also, there can an interactive UMAP scatter plot of the full corpus where users can filter by true decade, predicted decade, genre, or artist country of origin, with hover tooltips showing song name, artist, true era, and predicted era. Songs that are misclassified as a different decade will be highlighted as time travelers.</p>
+<hr>
+</section>
+</section>
+</section>
+<section id="final-report-nostalgia-sells---do-modern-songs-sound-like-theyre-from-the-80s" class="level1">
+<h1>Final Report: Nostalgia Sells - Do Modern Songs Sound Like They’re from the 80s?</h1>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp('/' + window.location.host + '/');
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+<footer class="footer">
+  <div class="nav-footer">
+    <div class="nav-footer-left">
+      &nbsp;
+    </div>   
+    <div class="nav-footer-center">
+<p>Amy Dang | JSC370 | University of Toronto | 2026</p>
+</div>
+    <div class="nav-footer-right">
+      &nbsp;
+    </div>
+  </div>
+</footer>
+
+
+
+
+</body></html>

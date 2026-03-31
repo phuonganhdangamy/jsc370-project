@@ -1,18 +1,17 @@
 ---
 title: "Sonic Time Travelers: Can a Song's Identity Place It in Its Era?"
-subtitle: "JSC370 Midterm Project - University of Toronto, 2026"
-author: "Anh Dang Phuong"
-date: "March 7, 2026"
-format:
-  html:
-    embed-resources: true
-    toc: true
-    toc-depth: 3
-    toc-title: "Table of Contents"
-    code-fold: true
-    code-summary: "Show code"
-    theme: cosmo
-jupyter: jsc370-venv
+# subtitle: "JSC370 Midterm Project - University of Toronto, 2026"
+# author: "Anh Dang Phuong"
+# date: "March 7, 2026"
+# format:
+#   html:
+#     embed-resources: true
+#     toc: true
+#     toc-depth: 3
+#     toc-title: "Table of Contents"
+#     code-fold: true
+#     code-summary: "Show code"
+#     theme: cosmo
 ---
 
 ```{python}
@@ -59,7 +58,7 @@ warnings.filterwarnings("ignore")
 sns.set_theme(style="whitegrid", palette="muted")
 ```
 
----
+<hr>
 
 ## 0. GitHub Repo:
 
@@ -91,7 +90,7 @@ Most existing work using Spotify data relies on static Kaggle datasets and focus
 
 - We integrate multiple data sources like Spotify for metadata, Genius for lyrics, and MusicBrainz for artist cultural context into a unified analysis.
 
----
+<hr>
 
 ## II. Methods
 
@@ -927,7 +926,8 @@ print(f"Embedding coverage: {len(master_df)/len(audio_df)*100:.1f}%")
 
 - Data collection is handled through direct HTTP calls via the requests library to the Spotify Search API, Genius API, and MusicBrainz API, with beautifulsoup used for lyrics page scraping.  Data is managed with pandas and serialized using pyarrow. Lyrical embeddings are generated with the sentence-transformers library using the all-MiniLM-L6-v2 model. Exploratory analysis uses matplotlib, seaborn, and plotly for visualization, and scikit-learn for preprocessing and dimensionality reduction. 
 
----
+
+<hr>
 ## IV. Summary & Final Project Plan
 
 ### Key Findings So Far
@@ -984,5 +984,5 @@ There will be a component called "What Era Do Your Lyrics Belong To?" tool where
 
 Also, there can an interactive UMAP scatter plot of the full corpus where users can filter by true decade, predicted decade, genre, or artist country of origin, with hover tooltips showing song name, artist, true era, and predicted era. Songs that are misclassified as a different decade will be highlighted as time travelers.
 
----
+<hr>
 # Final Report: Nostalgia Sells - Do Modern Songs Sound Like They’re from the 80s?
