@@ -15,3 +15,316 @@ master_df["lyric_word_count"] = master_df["lyrics"].dropna().apply(lambda x: len
 master_df["genre"] = master_df["seed_query"].str.extract(r"^(\w+(?:\s\w+)?)\s+year:")
 ```
 
+## Lyric Word Count by Decade
+```{python}
+#| label: wordcount-decade
+#| fig-cap: "Lyric word count distributions by decade. The 1990s shows the widest spread."
+#| echo: false
+
+fig = px.violin(
+    master_df.dropna(subset=["lyric_word_count"]),
+    x="decade",
+    y="lyric_word_count",
+    category_orders={"decade": decade_order},
+    color="decade",
+    color_discrete_sequence=px.colors.qualitative.Set2,  
+    box=False,       
+    points=False,      
+    height=500,
+    labels={
+        "lyric_word_count": "Word Count",
+        "decade": "Decade"
+    },
+)
+
+fig.update_traces(opacity=0.8)
+
+fig.update_layout(
+    title="Lyric Word Count Distribution by Decade",
+    showlegend=False,
+    yaxis_range=[0, 100000],
+    plot_bgcolor="white",
+    paper_bgcolor="white",
+    margin=dict(l=0, r=0, t=50, b=0),
+)
+
+# subtle gridlines (important)
+fig.update_yaxes(showgrid=True, gridcolor="lightgray")
+
+fig.show()
+```
+
+## Word Count Over Time
+```{python}
+#| label: wordcount-time
+#| fig-cap: "Mean and median lyric word count by release year. The mean-median gap narrows from the 2000s onward."
+#| echo: false
+
+yearly = (
+    master_df
+    .dropna(subset=["lyric_word_count", "release_year"])
+    .groupby("release_year")["lyric_word_count"]
+    .agg(["mean", "median", "count"])
+    .reset_index()
+)
+yearly = yearly[yearly["count"] >= 10]
+
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=yearly["release_year"], y=yearly["mean"],
+    name="Mean", line=dict(color="#6C4FBF", width=2)))
+fig.add_trace(go.Scatter(x=yearly["release_year"], y=yearly["median"],
+    name="Median", line=dict(color="#D85A30", width=2, dash="dash")))
+fig.update_layout(
+    height=400,
+    xaxis_title="Release Year",
+    yaxis_title="Word Count",
+    plot_bgcolor="white",
+    paper_bgcolor="white",
+    margin=dict(l=0, r=0, t=20, b=0),
+    legend=dict(orientation="h", y=1.05),
+)
+fig.show()
+```
+
+## Top TF-IDF Terms by Decade
+```{python}
+#| label: tfidf-interactive
+#| fig-cap: "Top 15 lyrical terms per decade after stopword removal. Select a decade from the dropdown."
+#| echo: false
+
+LYRICS_STOPWORDS = set(ENGLISH_STOP_WORDS).union({
+    "oh","yeah","ooh","ah","uh","na","la","hey","ha","woah","whoa","mmm","hm",
+    "gonna","wanna","gotta","ain","don","didn","won","can't","couldn","isn",
+    "know","like","just","got","get","let","come","go","say","said","want",
+    "need","love","baby","time","way","day","night","life","heart","feel",
+    "make","take","give","look","away","back","right","ll","ve","re","em",
+    "cause","til","bout","chorus","verse","bridge","hook","repeat",
+    "x2","x3","x4","lyrics","contributors","genius","embed","outro","intro",
+    "translations","english","translation","spanish",
+    "que","la","te","el","en","se","yo","da","le","si","mi","pa","tu","lo","es",
+})
+
+decade_docs = {
+    d: " ".join(master_df.loc[master_df["decade"] == d, "lyrics"].dropna().tolist())
+    for d in decade_order
+}
+
+vectorizer = TfidfVectorizer(
+    max_features=5000,
+    stop_words=list(LYRICS_STOPWORDS),
+    min_df=2,
+    ngram_range=(1, 2),
+    token_pattern=r"(?u)\b[a-zA-Z][a-zA-Z]+\b"   # removes numeric junk like 2018 / 10
+)
+
+tfidf_matrix = vectorizer.fit_transform(list(decade_docs.values()))
+feature_names = vectorizer.get_feature_names_out()
+
+# better palette than pastel
+colors = px.colors.qualitative.Set2
+
+traces = []
+buttons = []
+
+for i, decade in enumerate(decade_order):
+    scores = tfidf_matrix[i].toarray().flatten()
+    top_idx = np.argsort(scores)[::-1][:15]
+
+    top_words = [feature_names[j] for j in top_idx][::-1]
+    top_scores = [scores[j] for j in top_idx][::-1]
+
+    traces.append(
+        go.Bar(
+            x=top_scores,
+            y=top_words,
+            orientation="h",
+            marker=dict(color=colors[i % len(colors)]),
+            name=decade,
+            visible=(i == 0),
+            hovertemplate="<b>%{y}</b><br>TF-IDF: %{x:.3f}<extra></extra>"
+        )
+    )
+
+    visibility = [j == i for j in range(len(decade_order))]
+    buttons.append(
+        dict(
+            label=decade,
+            method="update",
+            args=[
+                {"visible": visibility},
+                {"title": {"text": f"Top 15 TF-IDF Terms in the {decade}"}}
+            ]
+        )
+    )
+
+fig = go.Figure(data=traces)
+
+fig.update_layout(
+    title={"text": f"Top 15 TF-IDF Terms in the {decade_order[0]}", "x": 0.08},
+    height=520,
+    showlegend=False,
+    plot_bgcolor="white",
+    paper_bgcolor="white",
+    margin=dict(l=110, r=30, t=110, b=60),
+    xaxis_title="TF-IDF Score",
+    yaxis_title="",
+    updatemenus=[
+        dict(
+            buttons=buttons,
+            active=0,
+            direction="down",
+            x=0.5,
+            y=1.22,
+            xanchor="left",
+            yanchor="top",
+            pad={"r": 10, "t": 0},
+            bgcolor="white",
+            bordercolor="lightgray",
+            borderwidth=1
+        )
+    ]
+)
+
+fig.update_xaxes(
+    showgrid=True,
+    gridcolor="lightgray",
+    zeroline=False
+)
+
+fig.update_yaxes(
+    showgrid=False,
+    automargin=True
+)
+
+fig.show()
+```
+
+## Artist Country of Origin by Decade
+```{python}
+#| label: country-decade
+#| fig-cap: "Top 8 artist countries per decade. US dominates throughout; Latin countries rise sharply from the 2010s."
+#| echo: false
+
+buttons = []
+traces = []
+
+for i, decade in enumerate(decade_order):
+    subset = master_df[master_df["decade"] == decade]
+    top_countries = subset["mb_country"].dropna().value_counts().head(8)
+    visible = (i == 0)
+    traces.append(go.Bar(
+        x=top_countries.values[::-1],
+        y=top_countries.index[::-1],
+        orientation="h",
+        marker_color=colors[i],
+        name=decade,
+        visible=visible,
+    ))
+    visibility = [j == i for j in range(len(decade_order))]
+    buttons.append(
+        dict(
+            label=decade, 
+            method="update",
+            args=[
+                {"visible": visibility},
+                {"title": {"text": f"Top Artist Countries of Origin in the {decade}"}}
+            ]
+        )
+    )
+
+fig = go.Figure(data=traces)
+fig.update_layout(
+    title={"text": f"Top Artist Countries of Origin in the {decade_order[0]}", "x": 0.08},
+    height=520,
+    updatemenus=[
+        dict(
+            active=0, 
+            buttons=buttons, 
+            x=0.8, 
+            y=1.11,
+            xanchor="left", 
+            yanchor="top", 
+            pad={"r": 10, "t": 0},
+            bgcolor="white",
+            bordercolor="lightgray",
+            borderwidth=1,
+            direction="down")],
+    xaxis_title="Number of artists",
+    plot_bgcolor="white",
+    paper_bgcolor="white",
+    margin=dict(l=0, r=0, t=60, b=0),
+    showlegend=False,
+)
+
+fig.update_xaxes(
+    showgrid=True,
+    gridcolor="lightgray",
+    zeroline=False
+)
+
+fig.update_yaxes(
+    showgrid=False,
+    automargin=True
+)
+
+fig.show()
+```
+
+## UMAP: Decade vs Genre
+```{python}
+#| label: umap-viz
+#| fig-cap: "UMAP embedding space. Toggle between decade and genre coloring to see that genre separates more cleanly than decade."
+#| echo: false
+
+import umap
+
+emb_cols = [c for c in master_df.columns if c.startswith("emb_")]
+reducer = umap.UMAP(n_components=2, random_state=42, n_neighbors=15, min_dist=0.1)
+embedding_2d = reducer.fit_transform(master_df[emb_cols].values)
+
+umap_df = pd.DataFrame({
+    "UMAP1": embedding_2d[:, 0],
+    "UMAP2": embedding_2d[:, 1],
+    "Decade": master_df["decade"].values,
+    "Genre": master_df["genre"].values,
+    "Track": master_df["track_name"].values,
+    "Artist": master_df["artist_name"].values,
+})
+
+fig_decade = px.scatter(umap_df, x="UMAP1", y="UMAP2", color="Decade",
+    hover_data=["Track", "Artist"], opacity=0.5, height=500,
+    color_discrete_sequence=px.colors.qualitative.Pastel,
+    category_orders={"Decade": decade_order})
+fig_decade.update_traces(marker=dict(size=6))
+
+fig_genre = px.scatter(umap_df, x="UMAP1", y="UMAP2", color="Genre",
+    hover_data=["Track", "Artist", "Decade"], opacity=0.5, height=500,
+    color_discrete_sequence=px.colors.qualitative.Safe)
+fig_genre.update_traces(marker=dict(size=6))
+
+# show decade by default; genre toggled via buttons
+for trace in fig_genre.data:
+    trace.visible = False
+
+fig = go.Figure(data=list(fig_decade.data) + list(fig_genre.data))
+n_decade = len(fig_decade.data)
+n_genre = len(fig_genre.data)
+
+fig.update_layout(
+    height=500,
+    updatemenus=[dict(
+        active=0,
+        buttons=[
+            dict(label="Color by Decade", method="update",
+                args=[{"visible": [True]*n_decade + [False]*n_genre}]),
+            dict(label="Color by Genre", method="update",
+                args=[{"visible": [False]*n_decade + [True]*n_genre}]),
+        ],
+        x=0.01, y=1.1, xanchor="left", yanchor="top",
+    )],
+    plot_bgcolor="white",
+    paper_bgcolor="white",
+    margin=dict(l=0, r=0, t=50, b=0),
+)
+fig.show()
+```

@@ -104,7 +104,7 @@ In order to answer all aspects of the research question, we collect and combine 
 
 - Purpose: Track metadata and decade labeling
 
-- What we collect: track ID, track name, artist name, album ID, release date, and popularity score
+- What we collect: track ID, track name, artist name, album ID, release date
 
 - Method: Search API queries by decade and genre keyword. For example, we query 80s rock tracks by calling `rock year:1980-1989`. Then pull the results by batches of 10. To respect Spotify's API rate limits (~5.5k records/day), we split the data collection process into 3-4 days to account for code bugs or unexpected failures. 
 
@@ -606,7 +606,8 @@ print(f"Remaining: {len(remaining_tracks)}")
 pv_results = []
 
 for i, row in enumerate(remaining_tracks.itertuples()):
-    result = get_genius_pageviews(row.artist_name, row.track_name, row.genius_url)
+    cleaned_track = clean_track_name(row.track_name)
+    result = get_genius_pageviews(row.artist_name, cleaned_track, row.genius_url)
 
     pageviews = result[0] if result else None
     
