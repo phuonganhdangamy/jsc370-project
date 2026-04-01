@@ -1,0 +1,48 @@
+---
+title: "Era Classifier: Can a song's lyrics place it in its decade?"
+---
+### Final Project Plan
+
+#### II. Data Modeling
+
+##### 1. Splitting the Dataset
+
+The master dataset will be splitted into training, validation, and test sets using a stratified split to preserve decade class proportions across all three partitions. We will use a 70/15/15 train/validation/test split.
+
+We will also stratify data by artist to prevent leakage: All songs by a given artist will be assigned to the same split, ensuring the model cannot memorize artist style rather than era characteristics.
+
+##### 2. Training the Models
+
+We will use supervised machine learning model to predict decade (5 classes: 1980s, 1990s, 2000s, 2010s, 2020s). Some models we will try are:
+
+- Multinomial logistic regression: This will be a baseline, providing an interpretable lower bound on classification performance.
+
+- XGBoost classifier: We expect it to capture the non-linear interactions in the embedding space that logistic regression cannot.
+
+For both models, PCA will be applied to reduce the 384-dimensional embeddings, balancing computational efficiency with information retention. 
+
+NOTE AS PER TA'S COMMENT: We will also try to fit an XGBoost model without PCA just to see what's the full potential of the model in this case, since XGBoost is known for avoiding overfitting and selecting the best features in the training set, which is what PCA attempts to do. 
+
+Models will be trained and hyperparameter tuned according to the performance on validation set.
+
+We will additionally explore whether adding lyric_word_count, detected language, or artist country of origin as supplementary features improves decade prediction beyond embeddings alone.
+
+##### 3. Validation
+
+For each model we will perform 5-fold cross-validated grid search over key hyperparameters (learning rate, max depth, number of estimators) for XGBoost, using the training set only.
+
+Macro-averaged F1 score will serve as the primary validation metric to account for class imbalance across decades. Per-class F1 scores will also be monitored to identify which decades are most difficult to classify. Early stopping will be applied during XGBoost training to prevent overfitting on the training fold.
+
+#### III. Performance Evaluation
+
+Final evaluation will be performed once on the held-out test set after hyperparameter selection is complete. We will report macro and weighted F1, precision, and recall for both the logistic regression baseline and XGBoost model, alongside full confusion matrices to visualize systematic misclassification patterns across decades. 
+
+The confusion matrix will be the main interest to answer our research question, by looking at the off-diagonal terms. SHAP values will be computed for the XGBoost model to identify which embedding dimensions most drive decade misclassification, and UMAP projections of the test set will be colored by true decade, predicted decade, and misclassification status to provide an interpretable visual summary of model behavior.
+
+#### IV. Interaction Component
+
+The final project will be published as a website. 
+
+There will be a component called "What Era Do Your Lyrics Belong To?" tool where a user pastes any block of text or song lyrics and it returns a predicted decade with confidence scores across all five classes displayed as a bar chart.
+
+Also, there can an interactive UMAP scatter plot of the full corpus where users can filter by true decade, predicted decade, genre, or artist country of origin, with hover tooltips showing song name, artist, true era, and predicted era. Songs that are misclassified as a different decade will be highlighted as time travelers.

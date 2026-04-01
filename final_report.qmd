@@ -637,6 +637,7 @@ final_pv = pd.concat(
 ).drop_duplicates(subset="track_id")
 
 final_pv.to_parquet(pv_file, index=False)
+final_pv.to_csv("data/raw/pageviews.csv", index=False)
 print(f"\nSaved pageviews for {len(final_pv)} tracks")
 print(f"Tracks with pageview data: {final_pv['pageviews'].notna().sum()}")
 ```
@@ -877,9 +878,124 @@ tracks_clean.to_csv("data/processed/tracks_clean.csv", index=False)
 # master dataset: only tracks with both audio + embeddings
 master = tracks_clean[tracks_clean["emb_0"].notna()].reset_index(drop=True)
 master.to_csv("data/processed/master.csv", index=False)
+master.to_parquet("data/processed/master.parquet", index=False)
 
 # print(f"\nAudio dataset: {len(tracks_clean)} tracks to data/processed/tracks_clean.csv")
-print(f"Master dataset: {len(master)} tracks to data/processed/master.csv")
+print(f"Master dataset: {len(master)} tracks.")
+```
+
+#### Step 7: Feature Engineering 
+```{python}
+#| label: feature-engineering
+#| eval: false
+#| echo: false
+#| results: hide
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
+from langdetect import detect, LangDetectException
+import pronouncing
+import nltk
+
+nltk.download("vader_lexicon", quiet=True)
+
+master_df = pd.read_csv("data/processed/master.csv")
+sid = SentimentIntensityAnalyzer()
+
+# helper: get last word of a line 
+def last_word(line):
+    words = re.findall(r"[a-z']+", line.lower())
+    return words[-1] if words else None
+
+# 1. rhyme density 
+def rhyme_density(lyrics):
+    """Proportion of line endings that share a rhyme sound with another line."""
+    if not lyrics or not isinstance(lyrics, str):
+        return np.nan
+    lines = [l.strip() for l in lyrics.splitlines() if len(l.strip()) > 2]
+    if len(lines) < 2:
+        return 0.0
+
+    endings = [last_word(l) for l in lines]
+    endings = [w for w in endings if w]
+
+    # get rhyme phones for each ending word
+    def get_phones(word):
+        phones = pronouncing.phones_for_word(word)
+        if not phones:
+            return None
+        # use last 2 phonemes as rhyme signature
+        parts = phones[0].split()
+        return " ".join(parts[-2:]) if len(parts) >= 2 else phones[0]
+
+    phone_list = [get_phones(w) for w in endings]
+
+    # count how many endings share a phone signature with at least one other
+    from collections import Counter
+    phone_counts = Counter(p for p in phone_list if p)
+    rhyming = sum(1 for p in phone_list if p and phone_counts[p] > 1)
+
+    return rhyming / len(endings) if endings else 0.0
+
+# 2. repetition ratio 
+def repetition_ratio(lyrics):
+    """Proportion of lines that are duplicates of another line."""
+    if not lyrics or not isinstance(lyrics, str):
+        return np.nan
+    lines = [l.strip().lower() for l in lyrics.splitlines() if len(l.strip()) > 2]
+    if len(lines) < 2:
+        return 0.0
+    from collections import Counter
+    counts = Counter(lines)
+    repeated = sum(count for line, count in counts.items() if count > 1)
+    return repeated / len(lines)
+
+# 3. sentiment score
+def sentiment_score(lyrics):
+    """VADER compound sentiment: -1 (most negative) to +1 (most positive)."""
+    if not lyrics or not isinstance(lyrics, str):
+        return np.nan
+    return sid.polarity_scores(lyrics)["compound"]
+
+# 4. language detection
+def detect_language(lyrics):
+    """Detect primary language using langdetect."""
+    if not lyrics or not isinstance(lyrics, str):
+        return np.nan
+    try:
+        return detect(lyrics[:1000])  # first 1000 chars is enough
+    except LangDetectException:
+        return np.nan
+
+# apply all 4 steps
+print("Computing rhyme density...")
+master_df["rhyme_density"] = master_df["lyrics"].apply(rhyme_density)
+
+print("Computing repetition ratio...")
+master_df["repetition_ratio"] = master_df["lyrics"].apply(repetition_ratio)
+
+print("Computing sentiment...")
+master_df["sentiment"] = master_df["lyrics"].apply(sentiment_score)
+
+print("Computing language...")
+master_df["language"] = master_df["lyrics"].apply(detect_language)
+
+print("Done.")
+print(master_df[["rhyme_density","repetition_ratio","sentiment","language"]].describe())
+print("\nLanguage distribution:")
+print(master_df["language"].value_counts().head(10))
+
+# save back
+master_df.to_parquet("data/processed/master.parquet", index=False)
+master_df.to_csv("data/processed/master.csv", index=False)
+print("Saved!")
+```
+
+```{python}
+#| eval: false
+#| echo: false
+#| results: hide
+
+# have to save since Step 6 will overwrite master.csv without the new features
+master_df[["track_id","sentiment","rhyme_density","repetition_ratio","language"]].to_parquet("data/processed/features.parquet", index=False)
 ```
 
 ### Final Dataset Summary
@@ -917,10 +1033,17 @@ Embedding coverage (ratio between the master dataset which has lyrics embeddings
 #| output: false
 audio_df = pd.read_parquet("data/processed/tracks_clean.parquet")
 master_df = pd.read_parquet("data/processed/master.parquet")
+features = pd.read_parquet("data/processed/features.parquet")
+master_df = master_df.merge(features, on="track_id", how="left")
 
 print(f"Audio dataset:  {len(audio_df)} tracks")
 print(f"Master dataset: {len(master_df)} tracks")
 print(f"Embedding coverage: {len(master_df)/len(audio_df)*100:.1f}%")
+
+# save back
+master_df.to_parquet("data/processed/master.parquet", index=False)
+master_df.to_csv("data/processed/master.csv", index=False)
+print("Saved!")
 ```
 
 ### Analytical Tools

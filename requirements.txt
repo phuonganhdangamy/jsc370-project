@@ -19,6 +19,9 @@ pyarrow          # for parquet read/write
 # NLP / Embeddings
 sentence-transformers
 transformers
+nltk
+langdetect
+pronouncing
 
 # Modeling
 scikit-learn
@@ -30,6 +33,7 @@ matplotlib
 seaborn
 plotly
 jinja2           # for styled dataframes
+statsmodels
 
 # Dimensionality reduction
 umap-learn

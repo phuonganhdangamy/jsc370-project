@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 from sklearn.feature_extraction.text import TfidfVectorizer, ENGLISH_STOP_WORDS
 import numpy as np
 
-master_df = pd.read_parquet("data/processed/master.parquet")
+master_df = pd.read_csv("data/processed/master.csv")
 decade_order = ["1980s", "1990s", "2000s", "2010s", "2020s"]
 master_df["lyric_word_count"] = master_df["lyrics"].dropna().apply(lambda x: len(str(x).split()))
 master_df["genre"] = master_df["seed_query"].str.extract(r"^(\w+(?:\s\w+)?)\s+year:")
@@ -328,3 +328,290 @@ fig.update_layout(
 )
 fig.show()
 ```
+
+
+# Page Views 
+```{python}
+#| label: pageviews-setup
+#| include: false
+pv_df = master_df[master_df["pageviews"].notna()].copy()
+pv_df["log_pageviews"] = np.log10(pv_df["pageviews"])
+```
+
+## Page Views by Decade
+```{python}
+#| label: pageviews-by-decade
+#| fig-cap: "Distribution of page views across decades"
+#| echo: false
+
+fig = px.histogram(pv_df, x="log_pageviews", color="decade", nbins=30,
+    labels={"log_pageviews": "Log(Page Views)"})
+fig.update_layout(height=500)
+fig.show()
+```
+
+## Top 10 Most Viewed Songs by Decade
+```{python}
+#| label: top-songs-pageviews
+#| echo: false
+#| fig-cap: "Top 10 most-viewed songs on Genius per decade. Use the dropdown to browse each era."
+
+buttons = []
+traces = []
+colors = px.colors.qualitative.Pastel
+
+for i, decade in enumerate(decade_order):
+    top = (
+        pv_df[pv_df["decade"] == decade]
+        .nlargest(10, "pageviews")
+        .sort_values("pageviews")
+    )
+    top["label"] = top["track_name"] + " (by " + top["artist_name"] + ")"
+    
+    traces.append(go.Bar(
+        x=top["pageviews"],
+        y=top["label"],
+        orientation="h",
+        marker_color=colors[i],
+        name=decade,
+        visible=(i == 0),
+        hovertemplate="<b>%{y}</b><br>Pageviews: %{x:,.0f}<extra></extra>",
+    ))
+    visibility = [j == i for j in range(len(decade_order))]
+    buttons.append(dict(
+        label=decade,
+        method="update",
+        args=[{"visible": visibility}],
+    ))
+
+fig = go.Figure(data=traces)
+fig.update_layout(
+    height=420,
+    updatemenus=[dict(
+        active=0, buttons=buttons,
+        x=0.01, y=1.15, xanchor="left", yanchor="top", direction="down",
+    )],
+    xaxis_title="Genius Pageviews",
+    plot_bgcolor="white",
+    paper_bgcolor="white",
+    margin=dict(l=0, r=0, t=60, b=0),
+    showlegend=False,
+)
+fig.show()
+```
+
+## Top 10 Most Viewed Artists by Decade
+```{python}
+#| label: top-artists-pageviews
+#| echo: false
+#| fig-cap: "Top 10 most-viewed artists on Genius per decade. Use the dropdown to browse each era."
+#| include: false
+buttons = []
+traces = []
+colors = px.colors.qualitative.Pastel
+
+for i, decade in enumerate(decade_order):
+    top = (
+        pv_df[pv_df["decade"] == decade]
+        .groupby("artist_name")["pageviews"]
+        .sum()
+        .nlargest(10)
+        .sort_values()
+    )
+    traces.append(go.Bar(
+        x=top.values,
+        y=top.index,
+        orientation="h",
+        marker_color=colors[i],
+        name=decade,
+        visible=(i == 0),
+        hovertemplate="<b>%{y}</b><br>Total Pageviews: %{x:,.0f}<extra></extra>",
+    ))
+    visibility = [j == i for j in range(len(decade_order))]
+    buttons.append(dict(
+        label=decade,
+        method="update",
+        args=[{"visible": visibility}],
+    ))
+
+fig = go.Figure(data=traces)
+fig.update_layout(
+    height=420,
+    updatemenus=[dict(
+        active=0, buttons=buttons,
+        x=0.01, y=1.15, xanchor="left", yanchor="top", direction="down",
+    )],
+    xaxis_title="Total Genius Pageviews",
+    plot_bgcolor="white",
+    paper_bgcolor="white",
+    margin=dict(l=0, r=0, t=60, b=0),
+    showlegend=False,
+)
+fig.show()
+```
+
+## Page Views vs. Word Count
+```{python}
+#| label: pageviews-wordcount
+#| echo: false
+#| fig-cap: "Pageviews vs lyric word count colored by decade. Longer lyrics do not necessarily drive higher engagement."
+
+scatter_df = pv_df.dropna(subset=["lyric_word_count"]).copy()
+scatter_df = scatter_df[scatter_df["lyric_word_count"] <= 6500] 
+
+fig = px.scatter(
+    scatter_df,
+    x="lyric_word_count",
+    y="log_pageviews",
+    color="decade",
+    category_orders={"decade": decade_order},
+    color_discrete_sequence=px.colors.qualitative.Pastel,
+    hover_data=["track_name", "artist_name", "pageviews"],
+    opacity=0.5,
+    trendline="lowess",
+    trendline_scope="overall",
+    trendline_color_override="#333333",
+    labels={
+        "lyric_word_count": "Lyric Word Count",
+        "log_pageviews": "Pageviews (log₁₀)",
+    },
+    height=480,
+)
+fig.update_traces(marker=dict(size=5))
+fig.update_layout(
+    plot_bgcolor="white",
+    paper_bgcolor="white",
+    margin=dict(l=0, r=0, t=20, b=0),
+    legend_title="Decade",
+)
+tickvals = [3, 4, 5, 6, 7]
+fig.update_yaxes(tickvals=tickvals, ticktext=[f"10<sup>{v}</sup>" for v in tickvals])
+fig.show()
+```
+
+## Sentiment by Decade
+```{python}
+#| label: sentiment-by-decade
+#| echo: false
+#| fig-cap: "VADER sentiment score by decade. Scores range from -1 (most negative) to +1 (most positive). A decline toward negative sentiment in recent decades may reflect shifting lyrical themes."
+
+fig = px.violin(
+    master_df.dropna(subset=["sentiment"]),
+    x="decade", y="sentiment",
+    color="decade",
+    category_orders={"decade": decade_order},
+    color_discrete_sequence=colors,
+    box=True,
+    hover_data=["track_name", "artist_name"],
+    labels={"sentiment": "VADER Sentiment Score", "decade": "Decade"},
+    height=430,
+)
+fig.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5,
+              annotation_text="neutral", annotation_position="right")
+fig.update_layout(
+    showlegend=False,
+    plot_bgcolor="white",
+    paper_bgcolor="white",
+    margin=dict(l=0, r=0, t=20, b=0),
+)
+fig.show()
+```
+
+## Repetition Ratio by Decade
+```{python}
+#| label: repetition-by-decade
+#| echo: false
+#| fig-cap: "Repetition ratio by decade, proportion of lines that are duplicates within a song. Higher repetition reflects more chorus-driven, hook-heavy song structures."
+
+fig = px.violin(
+    master_df.dropna(subset=["repetition_ratio"]),
+    x="decade", y="repetition_ratio",
+    color="decade",
+    category_orders={"decade": decade_order},
+    color_discrete_sequence=colors,
+    box=True,
+    hover_data=["track_name", "artist_name"],
+    labels={"repetition_ratio": "Repetition Ratio", "decade": "Decade"},
+    height=430,
+)
+fig.update_layout(
+    showlegend=False,
+    plot_bgcolor="white",
+    paper_bgcolor="white",
+    margin=dict(l=0, r=0, t=20, b=0),
+)
+fig.show()
+```
+
+## Rhyme Density by Decade
+```{python}
+#| label: rhyme-by-decade
+#| echo: false
+#| fig-cap: "Rhyme density by decade, proportion of line endings that share a rhyme sound with another line. Captures how structured and rhyme-driven lyrics are across eras."
+
+fig = px.violin(
+    master_df.dropna(subset=["rhyme_density"]),
+    x="decade", y="rhyme_density",
+    color="decade",
+    category_orders={"decade": decade_order},
+    color_discrete_sequence=colors,
+    box=True,
+    hover_data=["track_name", "artist_name"],
+    labels={"rhyme_density": "Rhyme Density", "decade": "Decade"},
+    height=430,
+)
+fig.update_layout(
+    showlegend=False,
+    plot_bgcolor="white",
+    paper_bgcolor="white",
+    margin=dict(l=0, r=0, t=20, b=0),
+)
+fig.show()
+```
+
+## Language Distribution by Decade
+```{python}
+#| label: language-by-decade
+#| echo: false
+#| fig-cap: "Detected language distribution by decade. The rise of Spanish-language tracks from the 2000s onward directly reflects the growing mainstream presence of Latin music in the corpus."
+
+# bin rare languages into "other"
+lang_df = master_df.dropna(subset=["language"]).copy()
+top_langs = lang_df["language"].value_counts().head(5).index.tolist()
+lang_df["language_grouped"] = lang_df["language"].apply(
+    lambda x: x if x in top_langs else "other"
+)
+
+lang_counts = (
+    lang_df
+    .groupby(["decade", "language_grouped"])
+    .size()
+    .reset_index(name="count")
+)
+# normalize to proportion within decade
+lang_counts["proportion"] = lang_counts.groupby("decade")["count"].transform(
+    lambda x: x / x.sum()
+)
+
+fig = px.bar(
+    lang_counts,
+    x="decade", y="proportion",
+    color="language_grouped",
+    category_orders={"decade": decade_order},
+    color_discrete_sequence=px.colors.qualitative.Safe,
+    labels={"proportion": "Proportion", "decade": "Decade", "language_grouped": "Language"},
+    height=430,
+    barmode="stack",
+)
+fig.update_layout(
+    plot_bgcolor="white",
+    paper_bgcolor="white",
+    margin=dict(l=0, r=0, t=20, b=0),
+    yaxis_tickformat=".0%",
+    legend_title="Language",
+)
+fig.show()
+```
+
+## Nostagia Sells
+<!-- TODO after fitting model to predict era. Also paste this visualization to the model result page? -->

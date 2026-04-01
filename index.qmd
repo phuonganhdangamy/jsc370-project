@@ -8,7 +8,7 @@ subtitle: "Can a song's lyrical identity place it in its era - and do retro-soun
 import pandas as pd
 import plotly.express as px
 
-master_df = pd.read_parquet("data/processed/master.parquet")
+master_df = pd.read_csv("data/processed/master.csv")
 ```
 
 ```{=html}
@@ -25,7 +25,7 @@ master_df = pd.read_parquet("data/processed/master.parquet")
   </div>
   <div class="stat-card">
     <div class="stat-label">Genius pageviews</div>
-    <div class="stat-value">71.6%</div>
+    <div class="stat-value">73.3%</div>
     <div class="stat-desc">tracks with engagement data</div>
   </div>
   <div class="stat-card">

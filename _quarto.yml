@@ -21,7 +21,7 @@ website:
       - text: "Try the Classifier"
         href: era-classifier.qmd
     right:
-      - text: "📄 Report"
+      - text: "📄 Download Report"
         href: report.pdf
         target: _blank
       - icon: github

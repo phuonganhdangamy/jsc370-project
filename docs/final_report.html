@@ -109,7 +109,7 @@ ul.task-list li input[type="checkbox"] {
             <ul class="navbar-nav navbar-nav-scroll ms-auto">
   <li class="nav-item">
     <a class="nav-link" href="./report.pdf" target="_blank"> 
-<span class="menu-text">📄 Report</span></a>
+<span class="menu-text">📄 Download Report</span></a>
   </li>  
   <li class="nav-item compact">
     <a class="nav-link" href="https://github.com/phuonganhdangamy/jsc370-project"> <i class="bi bi-github" role="img">
@@ -219,7 +219,7 @@ ul.task-list li input[type="checkbox"] {
 <ul>
 <li><p>Documentation: https://developer.spotify.com/documentation/web-api</p></li>
 <li><p>Purpose: Track metadata and decade labeling</p></li>
-<li><p>What we collect: track ID, track name, artist name, album ID, release date, and popularity score</p></li>
+<li><p>What we collect: track ID, track name, artist name, album ID, release date</p></li>
 <li><p>Method: Search API queries by decade and genre keyword. For example, we query 80s rock tracks by calling <code>rock year:1980-1989</code>. Then pull the results by batches of 10. To respect Spotify’s API rate limits (~5.5k records/day), we split the data collection process into 3-4 days to account for code bugs or unexpected failures.</p></li>
 </ul>
 <ol start="2" type="1">
@@ -301,6 +301,9 @@ ul.task-list li input[type="checkbox"] {
 <p>With all raw data sources collected, we perform cleaning, decade labeling, and cross-source alignment in a single consolidated step. By cleaning after all fetching is complete, we avoid discarding tracks that may have failed one pipeline but could still contribute to the analysis.</p>
 <p>First, we clean the Spotify tracks. Release years are extracted and parsed, records outside the 1980 and 2026 range are removed, and tracks identified as remasters, live versions, or remixes via regex are filtered out. Deduplication retains only the earliest known release per artist and track name pair to preserve the song’s true era of origin. Decade labels are then assigned by binning release years into 5 categories. A stratified cap of 2000 songs per decade is applied to correct for the overrepresentation of the 2010s.</p>
 <p>The audio features, MusicBrainz, and lyrical embeddings are merged against the cleaned Spotify track list using track id and artist id. Tracks that failed MusicBrainz matching are retained in the audio and lyrics datasets with null rather than dropped, since country of origin is a supplementary feature than required. Tracks that failed Genius scraping are excluded only from the lyrics and master datasets but remain in the audio-only.</p>
+</section>
+<section id="step-7-feature-engineering" class="level4">
+<h4 class="anchored" data-anchor-id="step-7-feature-engineering">Step 7: Feature Engineering</h4>
 </section>
 </section>
 <section id="final-dataset-summary" class="level3">

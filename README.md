@@ -22,17 +22,62 @@ The project is motivated by a cultural observation: just as fashion cycles repea
 All data collection scripts are in `midterm.qmd`. To reproduce:
 
 1. Clone the repository
-2. Create a virtual environment: `python -m venv venv && venv\Scripts\activate`
-3. Install dependencies: `pip install -r requirements.txt`
-4. Set environment variables for API credentials:
+2. Create a virtual environment and install dependencies (see **Environment Setup** below)
+3. Set environment variables for API credentials:
    - `SPOTIFY_CLIENT_ID`
    - `SPOTIFY_CLIENT_SECRET`
    - `GENIUS_ACCESS_TOKEN`
-5. Run all cells in `midterm.qmd` sequentially
+4. Run `quarto render` from the project root
 
 **Note:** Spotify API is subject to rate limits (development mode). Full data collection takes approximately 2–3 hours across all steps. Intermediate parquet and csv checkpoints are saved throughout so the pipeline is resumable.
 
 If API credentials are not available, one can skip the data collection section and continue running the remaining cells.
+
+---
+
+## Environment Setup
+
+Python 3.12 is required. The project uses a local virtual environment.
+
+### 1. Create and activate the virtual environment
+```bash
+python -m venv venv
+
+# Windows
+venv\Scripts\activate
+
+# macOS/Linux
+source venv/bin/activate
+```
+
+### 2. Install PyTorch
+
+`torch` and `torchvision` must be installed from PyTorch's own index before the rest of the requirements, or version mismatches will cause import errors.
+```bash
+# CPU only (works on all machines)
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+# If you have a CUDA-capable GPU (optional, faster)
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+```
+
+### 3. Install remaining dependencies
+```bash
+pip install -r requirements.txt
+```
+
+### 4. Install Quarto kernel dependencies and register the kernel
+
+Quarto requires `nbformat`, `nbclient`, and `ipykernel` to be present in the venv. Run:
+```bash
+pip install nbformat nbclient ipykernel ipython
+python -m ipykernel install --user --name jsc370-venv --display-name "jsc370-venv"
+```
+
+### 5. Render the report
+```bash
+quarto render
+```
 
 ---
 
