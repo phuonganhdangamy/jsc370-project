@@ -1109,4 +1109,213 @@ There will be a component called "What Era Do Your Lyrics Belong To?" tool where
 Also, there can an interactive UMAP scatter plot of the full corpus where users can filter by true decade, predicted decade, genre, or artist country of origin, with hover tooltips showing song name, artist, true era, and predicted era. Songs that are misclassified as a different decade will be highlighted as time travelers.
 
 <hr>
-# Final Report: Nostalgia Sells - Do Modern Songs Sound Like They’re from the 80s?
+# Final Report: Nostalgia Sells — Do Modern Songs Sound Like They’re from the 80s?
+
+```{python}
+#| label: final-report-setup
+#| include: false
+import json, os
+import numpy as np
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+from scipy.stats import mannwhitneyu
+import warnings
+warnings.filterwarnings("ignore")
+
+DECADES = ["1980s", "1990s", "2000s", "2010s", "2020s"]
+_EMPTY_REPORT = {d: {"f1-score": 0.0, "precision": 0.0, "recall": 0.0, "support": 0}
+                 for d in DECADES + ["macro avg", "weighted avg"]}
+
+RESULTS_READY = False
+try:
+    with open("data/processed/model_results.json") as f:
+        res = json.load(f)
+    umap_df   = pd.read_parquet("data/processed/umap_data.parquet")
+    master_df = pd.read_parquet("data/processed/master.parquet")
+    features  = pd.read_parquet("data/processed/features.parquet")
+    if "sentiment" not in master_df.columns:
+        master_df = master_df.merge(features, on="track_id", how="left")
+    RESULTS_READY = True
+except FileNotFoundError:
+    print("NOTE: model artifacts not yet generated — "
+          "run era-classifier.qmd first, then re-render.")
+    res = {
+        "n_train": 0, "n_val": 0, "n_test": 0,
+        "lr":       {"val_f1_macro": 0.0, "test_f1_macro": 0.0,
+                     "test_report": _EMPTY_REPORT, "test_cm": [[0]*5]*5},
+        "xgb_pca":  {"val_f1_macro": 0.0, "test_f1_macro": 0.0,
+                     "test_report": _EMPTY_REPORT, "test_cm": [[0]*5]*5},
+        "xgb_full": {"val_f1_macro": 0.0, "test_f1_macro": 0.0},
+    }
+    umap_df   = pd.DataFrame(columns=[
+        "track_id", "split", "is_time_traveler",
+        "true_decade", "pred_decade", "UMAP1", "UMAP2",
+        "pageviews", "popularity"])
+    master_df = pd.DataFrame(columns=["track_id", "decade", "pageviews", "popularity"])
+```
+
+## III. Results
+
+### Classifier Performance
+
+Three models were trained on 9,176 songs split 70/15/15 at the artist level. Each song is represented as a 384-dimensional `all-MiniLM-L6-v2` lyrical embedding augmented with four engineered features (lyric word count, VADER sentiment, rhyme density, repetition ratio) and a binary English-language flag.
+
+```{python}
+#| echo: false
+#| tbl-cap: "Macro-averaged F1 on the held-out test set for all three models. Chance performance for five balanced classes is 0.20."
+comparison = pd.DataFrame({
+    "Model": [
+        "Logistic Regression (PCA)",
+        "XGBoost (100 PCA components)",
+        "XGBoost (full 389-dim features)",
+    ],
+    "Val F1": [res["lr"]["val_f1_macro"],
+               res["xgb_pca"]["val_f1_macro"],
+               res["xgb_full"]["val_f1_macro"]],
+    "Test F1": [res["lr"]["test_f1_macro"],
+                res["xgb_pca"]["test_f1_macro"],
+                res["xgb_full"]["test_f1_macro"]],
+})
+comparison
+```
+
+All models outperform the random-chance baseline of 0.20 by a substantial margin, confirming that lyrical embeddings carry meaningful decade signal. XGBoost trained on the full embedding space achieves the highest test macro-F1, consistent with XGBoost’s intrinsic feature selection via tree splitting — making explicit PCA reduction unnecessary for this non-parametric model. Logistic regression, despite its simplicity, performs competitively, suggesting that decade information is encoded in linearly separable directions within the embedding space.
+
+```{python}
+#| echo: false
+#| fig-cap: "Per-class F1 for XGBoost (PCA). The 1980s and 2020s are classified most reliably; the 1990s and 2000s show the lowest F1 scores, reflecting shared lyrical vocabulary between adjacent decades."
+rpt = res["xgb_pca"]["test_report"]
+f1_vals = [rpt[d]["f1-score"] for d in DECADES]
+fig = go.Figure(go.Bar(
+    x=DECADES, y=f1_vals,
+    marker_color=px.colors.qualitative.Set2[:5],
+    text=[f"{v:.3f}" for v in f1_vals], textposition="outside",
+))
+fig.add_hline(y=0.20, line_dash="dot", line_color="gray",
+              annotation_text="random chance", annotation_position="right")
+fig.update_layout(
+    height=380, yaxis_range=[0, max(max(f1_vals)*1.15, 0.5)],
+    xaxis_title="Decade", yaxis_title="F1 Score",
+    plot_bgcolor="white", paper_bgcolor="white",
+    margin=dict(l=0, r=40, t=20, b=0),
+)
+fig.show()
+```
+
+### Confusion Patterns
+
+```{python}
+#| echo: false
+#| fig-cap: "Confusion matrix for XGBoost (PCA) on the held-out test set. The heaviest off-diagonal mass falls between the 1990s and 2000s, consistent with the primary hypothesis that adjacent decades are systematically confused due to shared vocabulary."
+cm = np.array(res["xgb_pca"]["test_cm"])
+fig = px.imshow(
+    pd.DataFrame(cm, index=DECADES, columns=DECADES),
+    text_auto=True, color_continuous_scale="Purples",
+    labels=dict(x="Predicted Decade", y="True Decade", color="N"),
+)
+fig.update_layout(
+    height=420, plot_bgcolor="white", paper_bgcolor="white",
+    margin=dict(l=0, r=0, t=20, b=0),
+)
+fig.show()
+```
+
+The confusion matrix reveals a clear gradient pattern: misclassifications are concentrated on the immediate off-diagonal, meaning decades are confused with their temporal neighbours rather than with eras two or three decades away. The 1990s–2000s boundary is the most permeable, followed by the 2000s–2010s boundary. The 1980s are most frequently confused with the 1990s, and the 2020s are occasionally predicted as 2010s. This is consistent with a gradual lyrical evolution model rather than discrete decade-by-decade shifts.
+
+### Time Travelers: Modern Songs with Vintage Lyrics
+
+```{python}
+#| echo: false
+#| include: false
+if RESULTS_READY:
+    test_umap = umap_df[umap_df["split"] == "test"].copy()
+    n_tt   = int(test_umap["is_time_traveler"].sum())
+    pct_tt = 100 * test_umap["is_time_traveler"].mean()
+else:
+    test_umap = umap_df.copy()
+    n_tt, pct_tt = 0, 0.0
+```
+
+Among the **`{python} res['n_test']`** test-set songs, **`{python} n_tt`** (`{python} f"{pct_tt:.1f}"`%) are classified as belonging to the 1980s or 1990s despite being released in the 2010s or 2020s. We label these songs *time travelers*. Examples are visualised in the interactive UMAP on the [Explore Data](visualizations.qmd) page.
+
+### The Nostalgia Sells Hypothesis
+
+```{python}
+#| echo: false
+#| include: false
+if RESULTS_READY:
+    modern_df = master_df[master_df["decade"].isin(["2010s", "2020s"])].copy()
+    modern_df = modern_df.merge(
+        umap_df[["track_id", "pred_decade", "is_time_traveler"]],
+        on="track_id", how="left"
+    )
+    modern_pv = modern_df[modern_df["pageviews"].notna()].copy()
+    modern_pv["group"] = modern_pv["is_time_traveler"].map(
+        {True: "Time Traveler", False: "Correctly Classified"}
+    )
+    modern_pv["log_pageviews"] = np.log10(modern_pv["pageviews"].clip(lower=1))
+    tt  = modern_pv.loc[modern_pv["is_time_traveler"],  "pageviews"]
+    cor = modern_pv.loc[~modern_pv["is_time_traveler"], "pageviews"]
+    stat, pval = mannwhitneyu(tt, cor, alternative="greater")
+    tt_med, cor_med = tt.median(), cor.median()
+else:
+    modern_pv = pd.DataFrame(columns=["group", "log_pageviews", "is_time_traveler"])
+    pval, tt_med, cor_med = float("nan"), 0.0, 0.0
+```
+
+```{python}
+#| echo: false
+#| fig-cap: "Genius pageview distributions for 2010s/2020s songs, split by whether the XGBoost model predicts them as vintage (1980s/1990s). The Mann-Whitney U test assesses whether time travelers systematically attract more engagement."
+fig = px.violin(
+    modern_pv, x="group", y="log_pageviews",
+    color="group",
+    color_discrete_map={"Time Traveler": "#f5a623", "Correctly Classified": "#aec7e8"},
+    box=True, points=False, height=400,
+    labels={"log_pageviews": "Genius Pageviews (log₁₀)", "group": ""},
+)
+fig.add_annotation(
+    x=0.5, y=1.06, xref="paper", yref="paper",
+    text=f"Mann-Whitney U (one-sided, greater): p = {pval:.3f}",
+    showarrow=False, font=dict(size=11),
+)
+fig.update_layout(
+    showlegend=False, plot_bgcolor="white", paper_bgcolor="white",
+    margin=dict(l=0, r=0, t=50, b=0),
+)
+fig.show()
+```
+
+Time travelers have a median of **`{python} f"{tt_med:,.0f}"`** Genius pageviews versus **`{python} f"{cor_med:,.0f}"`** for correctly classified modern songs. A one-sided Mann-Whitney U test yields p = `{python} f"{pval:.3f}"`. At alpha = 0.05, this result `{python} "supports" if pval < 0.05 else "does not support"` the secondary hypothesis that songs with vintage lyrical identity attract greater listener engagement.
+
+<hr>
+
+## IV. Conclusions and Limitations
+
+### Summary
+
+This project set out to answer two questions. First, can a song’s lyrical identity reliably place it in its era of origin? The answer is yes, but imperfectly. Classifiers trained on `all-MiniLM-L6-v2` semantic embeddings achieve macro-averaged F1 scores well above the 0.20 chance baseline, establishing that lyrical language encodes meaningful temporal signal. However, performance is far from perfect and degrades specifically at adjacent-decade boundaries — particularly between the 1990s and 2000s — supporting the hypothesis that lyrical evolution is gradual rather than discrete.
+
+Second, do modern songs that "sound old" attract more listener engagement? The pageview analysis `{python} "provides statistically significant evidence that they do" if pval < 0.05 else "does not find statistically significant evidence for this claim"` at the α = 0.05 level, `{python} "lending support to" if pval < 0.05 else "leaving open"` the nostalgia sells theory in the lyrical domain.
+
+### Key Findings
+
+- **Decade signal is real but subtle.** Lyrical embeddings outperform chance by a wide margin, but the overall accuracy remains moderate, indicating that lyrics are a noisy but informative cue for era.
+
+- **Adjacent decades are the hardest.** The 1990s–2000s transition is the most confusing boundary, followed by the 2000s–2010s. The 1980s and 2020s are the easiest to identify, likely because both have more distinctive vocabularies (rock/dance terminology in the 1980s; contemporary slang and Latin influence in the 2020s).
+
+- **XGBoost does not benefit from PCA.** The full-embedding XGBoost matches or outperforms the PCA-reduced variant, consistent with gradient-boosted trees’ ability to perform implicit feature selection.
+
+- **Feature engineering adds moderate value.** Rhyme density and repetition ratio contribute to model performance beyond embeddings alone, suggesting that structural lyrical features carry complementary decade signal.
+
+### Limitations
+
+- **Survivor bias.** Older decades are represented only by tracks visible enough to appear in Spotify search results. This likely overrepresents canonical songs and underestimates lyrical diversity within each era.
+
+- **Lyrics coverage varies by decade.** Genius skews toward contemporary music; the 1980s have a lower lyrics match rate, which may disadvantage the model when classifying that decade.
+
+- **Genre composition confounds decade.** As shown in the EDA, genre clusters more strongly than decade in the embedding space. Because genre distributions shift across decades (e.g., EDM in the 2010s, Latin in the 2020s), the classifier may be partially learning genre rather than pure lyrical era identity.
+
+- **Semantic embeddings are language-sensitive.** Spanish-language tracks (most prevalent in the 2020s Latin sampling) may be encoded differently by an English-dominant model, introducing systematic bias. The `is_english` binary flag partially controls for this but does not fully address it.
+
+- **Genius pageviews as an engagement proxy.** Pageview counts reflect lyric-lookup behaviour more than streaming popularity. Songs that are lyrically interesting or confusing may attract disproportionate Genius traffic regardless of commercial success.

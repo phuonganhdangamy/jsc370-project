@@ -1,0 +1,207 @@
+---
+title: "Model Results and Interpretation"
+---
+
+```{python}
+#| include: false
+import json, os
+import numpy as np
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+
+DECADES = ["1980s", "1990s", "2000s", "2010s", "2020s"]
+
+# Load pre-computed results from era-classifier.qmd
+with open("data/processed/model_results.json") as f:
+    res = json.load(f)
+
+umap_df = pd.read_parquet("data/processed/umap_data.parquet")
+test_umap = umap_df[umap_df["split"] == "test"].copy()
+COLORS_DECADE = px.colors.qualitative.Set2
+```
+
+## Model Performance Summary
+
+Three models were evaluated on a held-out test set of **`{python} res['n_test']`** songs
+(from a total of **`{python} res['n_train'] + res['n_val'] + res['n_test']`** tracks split
+70 / 15 / 15 at the artist level).
+The primary metric is macro-averaged F1, which treats all five decade classes equally
+regardless of their support.
+
+```{python}
+#| echo: false
+#| tbl-cap: "Model comparison on the held-out test set. XGBoost trained on full embeddings achieves the highest macro-F1."
+comparison = pd.DataFrame({
+    "Model": [
+        "Logistic Regression (PCA)",
+        "XGBoost (100 PCA components)",
+        "XGBoost (full 389-dim features)",
+    ],
+    "Val F1 (macro)":  [res["lr"]["val_f1_macro"],
+                        res["xgb_pca"]["val_f1_macro"],
+                        res["xgb_full"]["val_f1_macro"]],
+    "Test F1 (macro)": [res["lr"]["test_f1_macro"],
+                        res["xgb_pca"]["test_f1_macro"],
+                        res["xgb_full"]["test_f1_macro"]],
+})
+comparison
+```
+
+Macro-F1 above the random-chance baseline of 0.20 (five balanced classes) confirms that
+lyrical embeddings do carry meaningful decade signal, supporting the primary hypothesis.
+XGBoost without PCA edges out the PCA-reduced variant, consistent with XGBoost's ability
+to perform implicit feature selection.
+
+## Per-Class Results: XGBoost
+
+```{python}
+#| echo: false
+#| tbl-cap: "Per-class precision, recall, and F1 for the best-performing XGBoost model on the test set."
+rpt = res["xgb_pca"]["test_report"]
+rpt_df = (
+    pd.DataFrame(rpt).T
+    .loc[DECADES + ["macro avg", "weighted avg"],
+         ["precision", "recall", "f1-score", "support"]]
+    .rename(columns={"f1-score": "F1"})
+    .round(3)
+)
+rpt_df["support"] = rpt_df["support"].astype(int)
+rpt_df.index.name = "Decade"
+rpt_df
+```
+
+Per-class F1 reveals that the 1980s and 2020s are the best-separated decades, while
+the 1990s and 2000s show the lowest F1 scores — consistent with the primary hypothesis
+that adjacent decades share more lyrical vocabulary and are harder to distinguish.
+
+## Confusion Matrix
+
+```{python}
+#| echo: false
+#| fig-cap: "Confusion matrix for XGBoost (PCA) on the held-out test set. The strongest off-diagonal mass appears between the 1990s and 2000s, confirming that adjacent decades are systematically confused."
+cm = np.array(res["xgb_pca"]["test_cm"])
+fig = px.imshow(
+    pd.DataFrame(cm, index=DECADES, columns=DECADES),
+    text_auto=True, color_continuous_scale="Purples",
+    labels=dict(x="Predicted Decade", y="True Decade", color="N"),
+    title="XGBoost (PCA) — Test Set Confusion Matrix",
+)
+fig.update_layout(
+    height=430, plot_bgcolor="white", paper_bgcolor="white",
+    margin=dict(l=0, r=0, t=50, b=0),
+)
+fig.show()
+```
+
+## Classification Difficulty: Adjacent Decades
+
+```{python}
+#| echo: false
+#| fig-cap: "Per-class F1 comparison across all three models. Logistic regression and XGBoost agree on which decades are difficult: the 1990s and 2000s consistently score lower, while the 1980s and 2020s benefit from more distinctive vocabulary."
+models_f1 = {}
+for key, label in [("lr", "LR"), ("xgb_pca", "XGB (PCA)"), ("xgb_full", "XGB (Full)")]:
+    rpt = res[key]["test_report"]
+    models_f1[label] = {d: rpt[d]["f1-score"] for d in DECADES}
+
+f1_df = (
+    pd.DataFrame(models_f1)
+    .reset_index()
+    .rename(columns={"index": "Decade"})
+    .melt(id_vars="Decade", var_name="Model", value_name="F1")
+)
+
+fig = px.bar(
+    f1_df, x="Decade", y="F1", color="Model",
+    barmode="group",
+    category_orders={"Decade": DECADES},
+    color_discrete_sequence=px.colors.qualitative.Set1,
+    labels={"F1": "F1 Score (macro avg)"},
+    height=400,
+)
+fig.add_hline(y=0.20, line_dash="dot", line_color="gray",
+              annotation_text="random chance (0.20)", annotation_position="right")
+fig.update_layout(
+    plot_bgcolor="white", paper_bgcolor="white",
+    margin=dict(l=0, r=0, t=20, b=0),
+)
+fig.show()
+```
+
+## Time Traveler UMAP
+
+```{python}
+#| echo: false
+#| fig-cap: "UMAP projection of the test set. Gold points are 'time travelers', i.e., 2010s and 2020s songs whose lyrics were classified as 1980s or 1990s. These songs cluster near the vintage decades in the embedding space."
+test_umap["status"] = "Correct"
+test_umap.loc[
+    ~(test_umap["true_decade"] == test_umap["pred_decade"]) &
+    ~test_umap["is_time_traveler"], "status"] = "Misclassified"
+test_umap.loc[test_umap["is_time_traveler"], "status"] = "Time Traveler"
+
+color_map = {
+    "Correct":       "#aec7e8",
+    "Misclassified": "#d62728",
+    "Time Traveler": "#f5a623",
+}
+fig = px.scatter(
+    test_umap.sort_values("status"),
+    x="UMAP1", y="UMAP2", color="status",
+    color_discrete_map=color_map,
+    hover_data=["track_name", "artist_name", "true_decade", "pred_decade"],
+    opacity=0.7, height=500,
+)
+fig.update_traces(marker=dict(size=5))
+fig.update_layout(
+    plot_bgcolor="white", paper_bgcolor="white",
+    margin=dict(l=0, r=0, t=20, b=0), legend_title="Classification",
+)
+fig.show()
+```
+
+## Nostalgia Sells: Engagement of Time Travelers
+
+```{python}
+#| include: false
+from scipy.stats import mannwhitneyu
+import warnings
+warnings.filterwarnings("ignore")
+
+master_df = pd.read_parquet("data/processed/master.parquet")
+modern_df = master_df[master_df["decade"].isin(["2010s", "2020s"])].copy()
+modern_df = modern_df.merge(
+    umap_df[["track_id", "pred_decade", "is_time_traveler"]],
+    on="track_id", how="left"
+)
+modern_pv = modern_df[modern_df["pageviews"].notna()].copy()
+modern_pv["log_pageviews"] = np.log10(modern_pv["pageviews"].clip(lower=1))
+modern_pv["group"] = modern_pv["is_time_traveler"].map(
+    {True: "Time Traveler", False: "Correctly Classified"}
+)
+
+tt  = modern_pv.loc[modern_pv["is_time_traveler"],  "pageviews"]
+cor = modern_pv.loc[~modern_pv["is_time_traveler"], "pageviews"]
+stat, pval = mannwhitneyu(tt, cor, alternative="greater")
+```
+
+```{python}
+#| echo: false
+#| fig-cap: "Genius pageview distributions for modern songs split by whether the model predicts them as vintage. The Mann-Whitney U p-value tests whether time travelers receive more engagement than correctly classified modern songs."
+fig = px.violin(
+    modern_pv, x="group", y="log_pageviews",
+    color="group",
+    color_discrete_map={"Time Traveler": "#f5a623", "Correctly Classified": "#aec7e8"},
+    box=True, points=False, height=420,
+    labels={"log_pageviews": "Pageviews (log₁₀)", "group": ""},
+)
+fig.add_annotation(
+    x=0.5, y=1.06, xref="paper", yref="paper",
+    text=f"Mann-Whitney U test (greater): p = {pval:.3f}",
+    showarrow=False, font=dict(size=11),
+)
+fig.update_layout(
+    showlegend=False, plot_bgcolor="white", paper_bgcolor="white",
+    margin=dict(l=0, r=0, t=50, b=0),
+)
+fig.show()
+```

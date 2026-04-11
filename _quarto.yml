@@ -3,10 +3,10 @@ project:
   output-dir: "docs"       
   render:
     - final_report.qmd
+    - era-classifier.qmd
     - index.qmd
     - visualizations.qmd
     - results.qmd
-    - era-classifier.qmd
 
 website:
   title: "Sonic Time Travelers"

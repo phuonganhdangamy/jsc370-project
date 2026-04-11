@@ -1,48 +1,870 @@
 ---
-title: "Era Classifier: Can a song's lyrics place it in its decade?"
+title: "Era Classifier: Can a Song's Lyrics Place It in Its Decade?"
 ---
-### Final Project Plan
 
-#### II. Data Modeling
+This page trains and evaluates supervised classifiers that predict a song's decade of origin from its lyrical embedding. All heavy computation is cached to disk on first run — subsequent renders load saved artifacts.
 
-##### 1. Splitting the Dataset
+```{python}
+#| label: setup-classifier
+#| include: false
+import os, json, warnings
+import numpy as np
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import joblib
+import shap
+import umap as umap_lib
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import GridSearchCV, StratifiedKFold
+from sklearn.metrics import (classification_report, confusion_matrix,
+                              f1_score, precision_score, recall_score)
+import xgboost as xgb
 
-The master dataset will be splitted into training, validation, and test sets using a stratified split to preserve decade class proportions across all three partitions. We will use a 70/15/15 train/validation/test split.
+warnings.filterwarnings("ignore")
 
-We will also stratify data by artist to prevent leakage: All songs by a given artist will be assigned to the same split, ensuring the model cannot memorize artist style rather than era characteristics.
+DECADES      = ["1980s", "1990s", "2000s", "2010s", "2020s"]
+EMB_COLS     = [f"emb_{i}" for i in range(384)]
+EXTRA_COLS   = ["lyric_word_count", "sentiment", "rhyme_density",
+                "repetition_ratio", "is_english"]
+FEAT_COLS    = EMB_COLS + EXTRA_COLS
+MODELS_DIR   = "models"
+COLORS_DECADE = px.colors.qualitative.Set2
 
-##### 2. Training the Models
+os.makedirs(MODELS_DIR, exist_ok=True)
+os.makedirs("docs/models", exist_ok=True)
+os.makedirs("data/processed", exist_ok=True)
 
-We will use supervised machine learning model to predict decade (5 classes: 1980s, 1990s, 2000s, 2010s, 2020s). Some models we will try are:
+RETRAIN       = not os.path.exists(f"{MODELS_DIR}/xgb_pca.joblib")
+RERUN_SHAP    = not os.path.exists(f"{MODELS_DIR}/shap_vals.npy")
+RERUN_UMAP    = not os.path.exists("data/processed/umap_data.parquet")
+```
 
-- Multinomial logistic regression: This will be a baseline, providing an interpretable lower bound on classification performance.
+## 1. Feature Preparation
 
-- XGBoost classifier: We expect it to capture the non-linear interactions in the embedding space that logistic regression cannot.
+```{python}
+#| label: load-features
+#| echo: false
+master_df = pd.read_parquet("data/processed/master.parquet")
+features  = pd.read_parquet("data/processed/features.parquet")
 
-For both models, PCA will be applied to reduce the 384-dimensional embeddings, balancing computational efficiency with information retention. 
+# merge in engineered features (sentinel: idempotent merge)
+if "sentiment" not in master_df.columns:
+    master_df = master_df.merge(features, on="track_id", how="left")
 
-NOTE AS PER TA'S COMMENT: We will also try to fit an XGBoost model without PCA just to see what's the full potential of the model in this case, since XGBoost is known for avoiding overfitting and selecting the best features in the training set, which is what PCA attempts to do. 
+master_df["lyric_word_count"] = master_df["lyrics"].apply(
+    lambda x: len(str(x).split()) if pd.notna(x) else 0)
+master_df["is_english"] = (master_df["language"] == "en").astype(float)
 
-Models will be trained and hyperparameter tuned according to the performance on validation set.
+for col in EXTRA_COLS:
+    master_df[col] = pd.to_numeric(master_df[col], errors="coerce")
+    master_df[col] = master_df[col].fillna(master_df[col].median())
 
-We will additionally explore whether adding lyric_word_count, detected language, or artist country of origin as supplementary features improves decade prediction beyond embeddings alone.
+le = LabelEncoder()
+le.fit(DECADES)
+master_df["decade_label"] = le.transform(master_df["decade"])
 
-##### 3. Validation
+print(f"Master dataset: {len(master_df):,} tracks | {master_df['decade'].value_counts().sort_index().to_dict()}")
+```
 
-For each model we will perform 5-fold cross-validated grid search over key hyperparameters (learning rate, max depth, number of estimators) for XGBoost, using the training set only.
+## 2. Artist-Stratified 70/15/15 Split
 
-Macro-averaged F1 score will serve as the primary validation metric to account for class imbalance across decades. Per-class F1 scores will also be monitored to identify which decades are most difficult to classify. Early stopping will be applied during XGBoost training to prevent overfitting on the training fold.
+Each artist's entire catalogue is assigned to a single split, preventing the model from learning artist-specific style rather than era characteristics.
 
-#### III. Performance Evaluation
+```{python}
+#| label: artist-split
+#| echo: false
+SPLIT_PATH = "data/processed/splits.parquet"
 
-Final evaluation will be performed once on the held-out test set after hyperparameter selection is complete. We will report macro and weighted F1, precision, and recall for both the logistic regression baseline and XGBoost model, alongside full confusion matrices to visualize systematic misclassification patterns across decades. 
+if os.path.exists(SPLIT_PATH):
+    splits = pd.read_parquet(SPLIT_PATH)
+    master_df = master_df.merge(splits[["track_id", "split"]], on="track_id", how="left")
+else:
+    np.random.seed(42)
+    artist_decade = (
+        master_df.groupby("artist_id")["decade"]
+        .agg(lambda x: x.mode().iloc[0])
+        .reset_index()
+        .rename(columns={"decade": "primary_decade"})
+    )
 
-The confusion matrix will be the main interest to answer our research question, by looking at the off-diagonal terms. SHAP values will be computed for the XGBoost model to identify which embedding dimensions most drive decade misclassification, and UMAP projections of the test set will be colored by true decade, predicted decade, and misclassification status to provide an interpretable visual summary of model behavior.
+    split_map = {}
+    for dec, grp in artist_decade.groupby("primary_decade"):
+        aids = grp["artist_id"].values.copy()
+        np.random.shuffle(aids)
+        n       = len(aids)
+        n_train = int(0.70 * n)
+        n_val   = int(0.15 * n)
+        for a in aids[:n_train]:              split_map[a] = "train"
+        for a in aids[n_train:n_train+n_val]: split_map[a] = "val"
+        for a in aids[n_train+n_val:]:        split_map[a] = "test"
 
-#### IV. Interaction Component
+    master_df["split"] = master_df["artist_id"].map(split_map)
+    master_df[["track_id", "split"]].to_parquet(SPLIT_PATH, index=False)
 
-The final project will be published as a website. 
+split_counts = master_df["split"].value_counts()
+print(f"Split sizes — Train: {split_counts['train']:,}  Val: {split_counts['val']:,}  Test: {split_counts['test']:,}")
+print("\nDecade balance per split:")
+print(master_df.pivot_table(index="decade", columns="split", values="track_id",
+                              aggfunc="count")[["train","val","test"]].fillna(0).astype(int))
+```
 
-There will be a component called "What Era Do Your Lyrics Belong To?" tool where a user pastes any block of text or song lyrics and it returns a predicted decade with confidence scores across all five classes displayed as a bar chart.
+```{python}
+#| label: build-matrices
+#| include: false
+train_df = master_df[master_df["split"] == "train"].reset_index(drop=True)
+val_df   = master_df[master_df["split"] == "val"].reset_index(drop=True)
+test_df  = master_df[master_df["split"] == "test"].reset_index(drop=True)
 
-Also, there can an interactive UMAP scatter plot of the full corpus where users can filter by true decade, predicted decade, genre, or artist country of origin, with hover tooltips showing song name, artist, true era, and predicted era. Songs that are misclassified as a different decade will be highlighted as time travelers.
+X_train = train_df[FEAT_COLS].values.astype(float)
+X_val   = val_df[FEAT_COLS].values.astype(float)
+X_test  = test_df[FEAT_COLS].values.astype(float)
+y_train = train_df["decade_label"].values
+y_val   = val_df["decade_label"].values
+y_test  = test_df["decade_label"].values
+
+X_all = master_df[FEAT_COLS].values.astype(float)
+y_all = master_df["decade_label"].values
+```
+
+## 3. Dimensionality Reduction via PCA
+
+A single `StandardScaler` is fit on the training set only (no data leakage), then 100 principal components are extracted. This reduces the 389-dimensional feature space (384 embedding dims + 5 engineered features) while retaining the majority of variance.
+
+```{python}
+#| label: pca-step
+#| echo: false
+SCALER_PATH = f"{MODELS_DIR}/scaler.joblib"
+PCA_PATH    = f"{MODELS_DIR}/pca.joblib"
+
+if RETRAIN:
+    scaler = StandardScaler().fit(X_train)
+    joblib.dump(scaler, SCALER_PATH)
+    pca = PCA(n_components=100, random_state=42).fit(scaler.transform(X_train))
+    joblib.dump(pca, PCA_PATH)
+else:
+    scaler = joblib.load(SCALER_PATH)
+    pca    = joblib.load(PCA_PATH)
+
+X_train_sc  = scaler.transform(X_train)
+X_val_sc    = scaler.transform(X_val)
+X_test_sc   = scaler.transform(X_test)
+X_all_sc    = scaler.transform(X_all)
+
+X_train_pca = pca.transform(X_train_sc)
+X_val_pca   = pca.transform(X_val_sc)
+X_test_pca  = pca.transform(X_test_sc)
+X_all_pca   = pca.transform(X_all_sc)
+
+cumvar = np.cumsum(pca.explained_variance_ratio_)
+n95    = int(np.searchsorted(cumvar, 0.95)) + 1
+print(f"100 PCs explain {cumvar[-1]*100:.1f}% of variance. "
+      f"{n95} PCs needed for 95%.")
+```
+
+```{python}
+#| label: pca-plot
+#| echo: false
+#| fig-cap: "Cumulative explained variance of the top 100 principal components. The embedding space is moderately dense. 100 components are required to explain roughly 90% of variance."
+fig = go.Figure()
+fig.add_trace(go.Scatter(
+    x=list(range(1, 101)), y=cumvar * 100,
+    mode="lines", line=dict(color="#4e79a7", width=2)
+))
+fig.add_hline(y=95, line_dash="dash", line_color="gray",
+              annotation_text="95%", annotation_position="right")
+fig.update_layout(
+    height=350,
+    xaxis_title="Number of Principal Components",
+    yaxis_title="Cumulative Explained Variance (%)",
+    plot_bgcolor="white", paper_bgcolor="white",
+    margin=dict(l=0, r=40, t=20, b=0),
+)
+fig.update_yaxes(showgrid=True, gridcolor="lightgray")
+fig.show()
+```
+
+## 4. Baseline: Logistic Regression
+
+Multinomial logistic regression trained on the 100 PCA components provides an interpretable lower bound on classification performance.
+
+```{python}
+#| label: train-lr
+#| echo: false
+LR_PATH = f"{MODELS_DIR}/lr_model.joblib"
+
+if RETRAIN:
+    lr = LogisticRegression(
+        C=1.0, max_iter=2000,
+        solver="lbfgs",
+        random_state=42, n_jobs=-1,
+    )
+    lr.fit(X_train_pca, y_train)
+    joblib.dump(lr, LR_PATH)
+else:
+    lr = joblib.load(LR_PATH)
+
+lr_val_preds  = lr.predict(X_val_pca)
+lr_test_preds = lr.predict(X_test_pca)
+lr_val_f1     = f1_score(y_val,  lr_val_preds,  average="macro")
+lr_test_f1    = f1_score(y_test, lr_test_preds, average="macro")
+print(f"LR Val macro-F1: {lr_val_f1:.3f}, Test macro-F1: {lr_test_f1:.3f}")
+```
+
+```{python}
+#| label: lr-report
+#| echo: false
+#| tbl-cap: "Per-class precision, recall, and F1 for logistic regression on the held-out test set."
+report_lr = classification_report(
+    y_test, lr_test_preds,
+    target_names=DECADES, output_dict=True
+)
+report_lr_df = (
+    pd.DataFrame(report_lr).T
+    .loc[DECADES + ["macro avg", "weighted avg"], ["precision", "recall", "f1-score", "support"]]
+    .rename(columns={"f1-score": "F1"})
+    .round(3)
+)
+report_lr_df["support"] = report_lr_df["support"].astype(int)
+report_lr_df.index.name = "Class"
+report_lr_df
+```
+
+```{python}
+#| label: lr-cm
+#| echo: false
+#| fig-cap: "Confusion matrix for logistic regression. Off-diagonal cells reveal which decades the model conflates most."
+cm_lr = confusion_matrix(y_test, lr_test_preds)
+fig = px.imshow(
+    pd.DataFrame(cm_lr, index=DECADES, columns=DECADES),
+    text_auto=True, color_continuous_scale="Blues",
+    labels=dict(x="Predicted Decade", y="True Decade", color="N"),
+    title="Logistic Regression — Test Set Confusion Matrix",
+)
+fig.update_layout(height=420, plot_bgcolor="white", paper_bgcolor="white",
+                  margin=dict(l=0, r=0, t=50, b=0))
+fig.show()
+```
+
+## 5. XGBoost Classifier (PCA Features)
+
+5-fold cross-validated grid search over key hyperparameters is conducted on the training set only. The best configuration is then evaluated on the validation set.
+
+```{python}
+#| label: train-xgb-pca
+#| echo: false
+XGB_PCA_PATH = f"{MODELS_DIR}/xgb_pca.joblib"
+CV_PATH      = f"{MODELS_DIR}/gs_cv_results.parquet"
+
+if RETRAIN:
+    param_grid = {
+        "n_estimators": [200, 400],
+        "max_depth": [4, 6],
+        "learning_rate": [0.05, 0.1],
+        "subsample": [0.8],
+        "colsample_bytree": [0.8],
+    }
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    gs = GridSearchCV(
+        xgb.XGBClassifier(
+            objective="multi:softprob",
+            tree_method="hist",
+            verbosity=0, random_state=42, n_jobs=-1,
+        ),
+        param_grid, cv=cv, scoring="f1_macro",
+        n_jobs=-1, verbose=0, refit=True,
+    )
+    gs.fit(X_train_pca, y_train)
+    xgb_pca = gs.best_estimator_
+    joblib.dump(xgb_pca, XGB_PCA_PATH)
+    pd.DataFrame(gs.cv_results_).to_parquet(CV_PATH, index=False)
+    print(f"Best params: {gs.best_params_}")
+    print(f"Best CV F1: {gs.best_score_:.3f}")
+else:
+    xgb_pca = joblib.load(XGB_PCA_PATH)
+    if os.path.exists(CV_PATH):
+        cv_df = pd.read_parquet(CV_PATH)
+        best_cv = cv_df.loc[cv_df["mean_test_score"].idxmax()]
+        print(f"Best CV F1 (loaded): {best_cv['mean_test_score']:.3f}")
+
+xgb_pca_val_preds = xgb_pca.predict(X_val_pca)
+xgb_pca_test_preds = xgb_pca.predict(X_test_pca)
+xgb_pca_val_f1 = f1_score(y_val,  xgb_pca_val_preds,  average="macro")
+xgb_pca_test_f1 = f1_score(y_test, xgb_pca_test_preds, average="macro")
+print(f"XGB-PCA Val macro-F1: {xgb_pca_val_f1:.3f}, Test macro-F1: {xgb_pca_test_f1:.3f}")
+```
+
+```{python}
+#| label: cv-results
+#| echo: false
+#| tbl-cap: "Cross-validation grid search results. Mean macro-F1 across 5 folds, sorted by score."
+if os.path.exists(CV_PATH):
+    cv_df = pd.read_parquet(CV_PATH)
+    param_cols = [c for c in cv_df.columns if c.startswith("param_")]
+    cv_display = (
+        cv_df[param_cols + ["mean_test_score", "std_test_score"]]
+        .rename(columns={
+            "param_n_estimators": "n_estimators",
+            "param_max_depth": "max_depth",
+            "param_learning_rate": "learning_rate",
+            "param_subsample": "subsample",
+            "param_colsample_bytree": "colsample_bytree",
+            "mean_test_score": "Mean F1",
+            "std_test_score": "Std F1",
+        })
+        .sort_values("Mean F1", ascending=False)
+        .round(4)
+        .reset_index(drop=True)
+    )
+    cv_display
+```
+
+```{python}
+#| label: xgb-pca-report
+#| echo: false
+#| tbl-cap: "Per-class precision, recall, and F1 for the best XGBoost (PCA) model on the held-out test set."
+report_xgb = classification_report(
+    y_test, xgb_pca_test_preds,
+    target_names=DECADES, output_dict=True
+)
+report_xgb_df = (
+    pd.DataFrame(report_xgb).T
+    .loc[DECADES + ["macro avg", "weighted avg"], ["precision", "recall", "f1-score", "support"]]
+    .rename(columns={"f1-score": "F1"})
+    .round(3)
+)
+report_xgb_df["support"] = report_xgb_df["support"].astype(int)
+report_xgb_df.index.name = "Class"
+report_xgb_df
+```
+
+```{python}
+#| label: xgb-pca-cm
+#| echo: false
+#| fig-cap: "Confusion matrix for XGBoost (PCA features). Adjacent decades — particularly the 1990s and 2000s — show the most cross-decade confusion."
+cm_xgb = confusion_matrix(y_test, xgb_pca_test_preds)
+fig = px.imshow(
+    pd.DataFrame(cm_xgb, index=DECADES, columns=DECADES),
+    text_auto=True, color_continuous_scale="Purples",
+    labels=dict(x="Predicted Decade", y="True Decade", color="N"),
+    title="XGBoost (PCA) — Test Set Confusion Matrix",
+)
+fig.update_layout(height=420, plot_bgcolor="white", paper_bgcolor="white",
+                  margin=dict(l=0, r=0, t=50, b=0))
+fig.show()
+```
+
+## 6. XGBoost Classifier (Full Embeddings, No PCA)
+
+XGBoost's built-in feature selection may obviate the need for explicit PCA. This model trains on the full 389-feature space using the same best hyperparameters found above.
+
+```{python}
+#| label: train-xgb-full
+#| echo: false
+XGB_FULL_PATH = f"{MODELS_DIR}/xgb_full.joblib"
+
+if RETRAIN:
+    best_p = xgb_pca.get_params()
+    xgb_full = xgb.XGBClassifier(
+        n_estimators=best_p["n_estimators"],
+        max_depth=best_p["max_depth"],
+        learning_rate=best_p["learning_rate"],
+        subsample=0.8,
+        colsample_bytree=0.8,
+        objective="multi:softprob",
+        tree_method="hist",
+        verbosity=0, random_state=42, n_jobs=-1,
+    )
+    xgb_full.fit(X_train_sc, y_train)
+    joblib.dump(xgb_full, XGB_FULL_PATH)
+else:
+    xgb_full = joblib.load(XGB_FULL_PATH)
+
+xgb_full_val_preds  = xgb_full.predict(X_val_sc)
+xgb_full_test_preds = xgb_full.predict(X_test_sc)
+xgb_full_val_f1     = f1_score(y_val,  xgb_full_val_preds,  average="macro")
+xgb_full_test_f1    = f1_score(y_test, xgb_full_test_preds, average="macro")
+print(f"XGB-Full Val macro-F1: {xgb_full_val_f1:.3f}, Test macro-F1: {xgb_full_test_f1:.3f}")
+```
+
+```{python}
+#| label: xgb-full-report
+#| echo: false
+#| tbl-cap: "Per-class precision, recall, and F1 for the best XGBoost (Full Embeddings) model on the held-out test set."
+report_xgb_full = classification_report(
+    y_test, xgb_full_test_preds,
+    target_names=DECADES, output_dict=True
+)   
+
+report_xgb_full_df = (
+    pd.DataFrame(report_xgb_full).T
+    .loc[DECADES + ["macro avg", "weighted avg"], ["precision", "recall", "f1-score", "support"]]
+    .rename(columns={"f1-score": "F1"})
+    .round(3)
+)
+report_xgb_full_df["support"] = report_xgb_full_df["support"].astype(int)
+report_xgb_full_df.index.name = "Class"
+report_xgb_full_df
+```
+
+## 7. Model Comparison
+
+```{python}
+#| label: model-comparison
+#| echo: false
+#| tbl-cap: "Summary of model performance on the validation and test sets. Macro-averaged F1 is the primary metric."
+comparison = pd.DataFrame({
+    "Model": ["Logistic Regression (PCA)", "XGBoost (PCA)", "XGBoost (Full Embeddings)"],
+    "Features":   ["100 PCs", "100 PCs", "389 dims"],
+    "Val F1 (macro)": [round(lr_val_f1, 3), round(xgb_pca_val_f1, 3), round(xgb_full_val_f1, 3)],
+    "Test F1 (macro)": [round(lr_test_f1, 3), round(xgb_pca_test_f1, 3), round(xgb_full_test_f1, 3)],
+})
+comparison
+```
+
+```{python}
+#| label: save-results
+#| include: false
+# Save all metrics to JSON for results.qmd and final_report.qmd
+results = {
+    "n_train": int(len(train_df)),
+    "n_val":   int(len(val_df)),
+    "n_test":  int(len(test_df)),
+    "pca_n_components": 100,
+    "pca_explained_variance": float(cumvar[-1]),
+    "pca_n95": int(n95),
+    "lr": {
+        "val_f1_macro":  round(float(lr_val_f1), 4),
+        "test_f1_macro": round(float(lr_test_f1), 4),
+        "test_report":   report_lr,
+        "test_cm":       cm_lr.tolist(),
+    },
+    "xgb_pca": {
+        "val_f1_macro":  round(float(xgb_pca_val_f1), 4),
+        "test_f1_macro": round(float(xgb_pca_test_f1), 4),
+        "test_report":   report_xgb,
+        "test_cm":       cm_xgb.tolist(),
+    },
+    "xgb_full": {
+        "val_f1_macro":  round(float(xgb_full_val_f1), 4),
+        "test_f1_macro": round(float(xgb_full_test_f1), 4),
+        "test_report":   report_xgb_full,
+        "test_cm":       confusion_matrix(y_test, xgb_full_test_preds).tolist(),
+    },
+}
+with open("data/processed/model_results.json", "w") as f:
+    json.dump(results, f, indent=2)
+```
+
+## 8. SHAP Feature Importance
+
+SHAP (SHapley Additive exPlanations) values quantify each feature's contribution to the model's predictions. For the PCA-based XGBoost, the 100 principal components are ranked by mean absolute SHAP value averaged across all five decade classes.
+
+```{python}
+#| label: shap-analysis
+#| echo: false
+SHAP_PATH = f"{MODELS_DIR}/shap_vals.npy"
+SHAP_IDX  = f"{MODELS_DIR}/shap_idx.npy"
+
+if RERUN_SHAP:
+    np.random.seed(42)
+    n_shap = min(500, len(X_test_pca))
+    idx    = np.random.choice(len(X_test_pca), n_shap, replace=False)
+    X_shap = X_test_pca[idx]
+
+    explainer = shap.TreeExplainer(xgb_pca)
+    raw_shap  = explainer.shap_values(X_shap)
+
+    if isinstance(raw_shap, list):
+        shap_arr = np.stack(raw_shap, axis=-1)        # (n, features, classes)
+    elif raw_shap.ndim == 3:
+        shap_arr = raw_shap
+    else:
+        shap_arr = raw_shap[..., np.newaxis]
+
+    np.save(SHAP_PATH, shap_arr)
+    np.save(SHAP_IDX,  idx)
+    RERUN_SHAP = False
+else:
+    shap_arr = np.load(SHAP_PATH)
+
+mean_abs_shap = np.abs(shap_arr).mean(axis=2).mean(axis=0)   # (100,)
+top_k  = 20
+top_pc = np.argsort(mean_abs_shap)[-top_k:][::-1]
+```
+
+```{python}
+#| label: shap-plot
+#| echo: false
+#| fig-cap: "Top 20 principal components by mean absolute SHAP value, averaged across all five decade classes. Higher values indicate that a PC is more influential in the model's era predictions."
+fig = go.Figure(go.Bar(
+    x=mean_abs_shap[top_pc],
+    y=[f"PC{i+1}" for i in top_pc],
+    orientation="h",
+    marker_color="#4e79a7",
+))
+fig.update_layout(
+    height=480,
+    xaxis_title="Mean |SHAP Value|",
+    yaxis_title="Principal Component",
+    yaxis=dict(autorange="reversed"),
+    plot_bgcolor="white", paper_bgcolor="white",
+    margin=dict(l=60, r=0, t=20, b=0),
+)
+fig.update_xaxes(showgrid=True, gridcolor="lightgray")
+fig.show()
+```
+
+```{python}
+#| label: shap-by-class
+#| echo: false
+#| fig-cap: "Mean absolute SHAP value per PC broken down by decade class. Distinct PCs drive classification of different eras."
+top5_pc = np.argsort(mean_abs_shap)[-5:][::-1]
+
+class_shap = np.abs(shap_arr).mean(axis=0)  # (100, 5)
+
+fig = go.Figure()
+for ci, dec in enumerate(DECADES):
+    fig.add_trace(go.Bar(
+        name=dec,
+        x=[f"PC{i+1}" for i in top5_pc],
+        y=class_shap[top5_pc, ci],
+        marker_color=COLORS_DECADE[ci],
+    ))
+fig.update_layout(
+    barmode="group", height=380,
+    xaxis_title="Top 5 Principal Components",
+    yaxis_title="Mean |SHAP Value|",
+    plot_bgcolor="white", paper_bgcolor="white",
+    margin=dict(l=0, r=0, t=20, b=0),
+    legend_title="Decade",
+)
+fig.show()
+```
+
+## 9. UMAP Projection
+
+A 2-dimensional UMAP projection of the test-set embeddings visualizes how songs cluster in the lyrical space, and where the model's predictions align or diverge from ground truth.
+
+```{python}
+#| label: umap-projection
+#| echo: false
+UMAP_PATH = "data/processed/umap_data.parquet"
+
+if RERUN_UMAP:
+    reducer = umap_lib.UMAP(
+        n_components=2, random_state=42,
+        n_neighbors=15, min_dist=0.1,
+    )
+    umap_2d = reducer.fit_transform(X_all_sc[:, :384])   # embeddings only
+
+    pred_all_pca  = le.inverse_transform(xgb_pca.predict(X_all_pca))
+    pred_all_full = le.inverse_transform(xgb_full.predict(X_all_sc))
+    true_all_str  = le.inverse_transform(y_all)
+
+    umap_df = pd.DataFrame({
+        "track_id":       master_df["track_id"].values,
+        "track_name":     master_df["track_name"].values,
+        "artist_name":    master_df["artist_name"].values,
+        "true_decade":    true_all_str,
+        "pred_decade":    pred_all_pca,
+        "split":          master_df["split"].values,
+        "UMAP1":          umap_2d[:, 0],
+        "UMAP2":          umap_2d[:, 1],
+        "pageviews":      master_df["pageviews"].values,
+        "popularity":     master_df["popularity"].values,
+    })
+
+    umap_df["is_time_traveler"] = (
+        umap_df["true_decade"].isin(["2010s", "2020s"]) &
+        umap_df["pred_decade"].isin(["1980s", "1990s"])
+    )
+    umap_df["correct"] = umap_df["true_decade"] == umap_df["pred_decade"]
+
+    umap_df.to_parquet(UMAP_PATH, index=False)
+    RERUN_UMAP = False
+else:
+    umap_df = pd.read_parquet(UMAP_PATH)
+
+test_umap = umap_df[umap_df["split"] == "test"].copy()
+print(f"Test set: {len(test_umap):,} tracks | "
+      f"Time travelers: {test_umap['is_time_traveler'].sum()} "
+      f"({100*test_umap['is_time_traveler'].mean():.1f}%)")
+```
+
+```{python}
+#| label: umap-true-decade
+#| echo: false
+#| fig-cap: "UMAP projection of the test set colored by true decade. Clusters are visible but overlapping, reflecting that lyrics alone do not perfectly separate eras."
+fig = px.scatter(
+    test_umap, x="UMAP1", y="UMAP2", color="true_decade",
+    category_orders={"true_decade": DECADES},
+    color_discrete_sequence=COLORS_DECADE,
+    hover_data=["track_name", "artist_name", "pred_decade"],
+    opacity=0.6, height=500,
+    labels={"true_decade": "True Decade"},
+)
+fig.update_traces(marker=dict(size=5))
+fig.update_layout(
+    plot_bgcolor="white", paper_bgcolor="white",
+    margin=dict(l=0, r=0, t=20, b=0), legend_title="True Decade",
+)
+fig.show()
+```
+
+```{python}
+#| label: umap-misclass
+#| echo: false
+#| fig-cap: "Test-set UMAP colored by classification outcome. Red points are misclassified; grey are correct. Time travelers (2010s/2020s predicted as 1980s/1990s) are highlighted in gold."
+test_umap["status"] = "Correct"
+test_umap.loc[~test_umap["correct"] & ~test_umap["is_time_traveler"], "status"] = "Misclassified"
+test_umap.loc[test_umap["is_time_traveler"], "status"] = "Time Traveler"
+
+color_map = {"Correct": "#aec7e8", "Misclassified": "#d62728", "Time Traveler": "#f5a623"}
+fig = px.scatter(
+    test_umap.sort_values("status"),
+    x="UMAP1", y="UMAP2", color="status",
+    color_discrete_map=color_map,
+    hover_data=["track_name", "artist_name", "true_decade", "pred_decade"],
+    opacity=0.7, height=500,
+)
+fig.update_traces(marker=dict(size=5))
+fig.update_layout(
+    plot_bgcolor="white", paper_bgcolor="white",
+    margin=dict(l=0, r=0, t=20, b=0), legend_title="Classification",
+)
+fig.show()
+```
+
+## 10. The Nostalgia Sells Hypothesis
+
+The secondary hypothesis predicts that modern songs (2010s/2020s) whose lyrics are misclassified as vintage (1980s/1990s) will have higher listener engagement than correctly classified modern songs, supporting the "nostalgia sells" theory.
+
+```{python}
+#| label: nostalgia-analysis
+#| echo: false
+modern_df = master_df[master_df["decade"].isin(["2010s", "2020s"])].copy()
+modern_df = modern_df.merge(
+    umap_df[["track_id", "pred_decade", "is_time_traveler"]],
+    on="track_id", how="left"
+)
+modern_pv = modern_df[modern_df["pageviews"].notna()].copy()
+modern_pv["group"] = modern_pv["is_time_traveler"].map(
+    {True: "Time Traveler\n(2010s–20s predicted as 1980s–90s)",
+     False: "Correctly Classified\nModern"}
+)
+modern_pv["log_pageviews"] = np.log10(modern_pv["pageviews"].clip(lower=1))
+
+print(f"Modern tracks with pageviews: {len(modern_pv):,}")
+print(f"  Time Travelers:  {modern_pv['is_time_traveler'].sum():,}")
+print(f"  Correctly classified: {(~modern_pv['is_time_traveler']).sum():,}")
+print()
+for g, sub in modern_pv.groupby("is_time_traveler"):
+    label = "Time Travelers" if g else "Correct"
+    print(f"  {label}: median pageviews = {sub['pageviews'].median():,.0f}  "
+          f"mean = {sub['pageviews'].mean():,.0f}")
+```
+
+```{python}
+#| label: nostalgia-plot
+#| echo: false
+#| fig-cap: "Genius pageview distributions for modern songs (2010s/2020s) split by whether the model predicts them as vintage (1980s/1990s). Higher pageviews in the 'Time Traveler' group would support the nostalgia sells hypothesis."
+from scipy.stats import mannwhitneyu
+tt  = modern_pv.loc[modern_pv["is_time_traveler"],  "pageviews"]
+cor = modern_pv.loc[~modern_pv["is_time_traveler"], "pageviews"]
+stat, pval = mannwhitneyu(tt, cor, alternative="greater")
+
+fig = px.violin(
+    modern_pv, x="group", y="log_pageviews",
+    color="group",
+    color_discrete_map={
+        "Time Traveler\n(2010s-20s predicted as 1980s-90s)": "#f5a623",
+        "Correctly Classified\nModern": "#aec7e8",
+    },
+    box=True, points=False, height=430,
+    labels={"log_pageviews": "Pageviews (log)", "group": ""},
+)
+fig.add_annotation(
+    x=0.5, y=1.05, xref="paper", yref="paper",
+    text=f"Mann-Whitney U test: p = {pval:.3f}",
+    showarrow=False, font=dict(size=11),
+)
+fig.update_layout(
+    showlegend=False, plot_bgcolor="white", paper_bgcolor="white",
+    margin=dict(l=0, r=0, t=50, b=0),
+)
+fig.show()
+```
+
+
+## 11. Save Browser Inference Artifacts
+
+```{python}
+#| label: export-browser-artifacts
+#| include: false
+# Export PCA + LR weights as JSON so the in-browser classifier can run
+# without a Python backend.
+extra_means = {col: float(train_df[col].mean()) for col in EXTRA_COLS}
+
+pca_export = {
+    "mean":       scaler.mean_.tolist(),
+    "scale":      scaler.scale_.tolist(),
+    "components": pca.components_.tolist(),   # (100, 389)
+    "extra_feature_means": extra_means,
+}
+
+lr_export = {
+    "coef":      lr.coef_.tolist(),       # (5, 100)
+    "intercept": lr.intercept_.tolist(),   # (5,)
+    "classes":   DECADES,
+}
+
+with open("docs/models/pca_export.json", "w") as f:
+    json.dump(pca_export, f)
+
+with open("docs/models/lr_export.json", "w") as f:
+    json.dump(lr_export, f)
+
+print("Browser inference artifacts saved to docs/models/")
+```
+
+---
+
+## Try It: What Era Are Your Lyrics From?
+
+Paste any block of song lyrics below. The classifier runs entirely in your browser using the same `all-MiniLM-L6-v2` sentence encoder and the logistic regression model trained above. The model downloads (~22 MB) on first use and is cached by your browser.
+
+```{=html}
+<div id="era-widget" style="border:1px solid #ddd; border-radius:8px; padding:1.2rem; margin:1rem 0; background:#fafafa;">
+
+  <p style="margin:0 0 0.6rem; font-weight:600;">Paste song lyrics here:</p>
+
+  <textarea id="lyrics-input" rows="8"
+    style="width:100%; box-sizing:border-box; font-size:0.9rem; padding:0.5rem;
+           border:1px solid #ccc; border-radius:4px; resize:vertical; font-family:inherit;"
+    placeholder="e.g. I was running through the jungle on a moonlit night..."></textarea>
+
+  <div style="margin-top:0.7rem; display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
+    <button id="classify-btn" onclick="classifyLyrics()"
+      style="background:#4e79a7; color:white; border:none; border-radius:5px;
+             padding:0.45rem 1.2rem; font-size:0.95rem; cursor:pointer;">
+      Classify Era
+    </button>
+    <span id="status-msg" style="font-size:0.88rem; color:#555;"></span>
+  </div>
+
+  <div id="chart-container" style="display:none; margin-top:1.2rem;">
+    <p id="pred-headline" style="font-weight:600; font-size:1.05rem; margin:0 0 0.5rem;"></p>
+    <div id="bar-chart"></div>
+  </div>
+</div>
+
+<script type="module">
+/* ---- state ---- */
+let extractor = null, pcaData = null, lrData = null, modelsLoaded = false;
+
+/* ---- helpers ---- */
+function setStatus(msg) {
+  document.getElementById("status-msg").textContent = msg;
+}
+
+function softmax(logits) {
+  const m = Math.max(...logits);
+  const e = logits.map(l => Math.exp(l - m));
+  const s = e.reduce((a, b) => a + b, 0);
+  return e.map(v => v / s);
+}
+
+function renderBars(classes, probs) {
+  const predIdx = probs.indexOf(Math.max(...probs));
+  document.getElementById("pred-headline").textContent =
+    `Predicted Era: ${classes[predIdx]}  (${(probs[predIdx]*100).toFixed(1)}% confidence)`;
+
+  const colors = ["#66c2a5","#fc8d62","#8da0cb","#e78ac3","#a6d854"];
+  const html = classes.map((cls, i) => `
+    <div style="display:flex;align-items:center;margin:5px 0;gap:8px;">
+      <span style="width:52px;text-align:right;font-size:0.88rem;flex-shrink:0;">${cls}</span>
+      <div style="flex:1;background:#eee;border-radius:4px;overflow:hidden;height:22px;">
+        <div style="width:${(probs[i]*100).toFixed(1)}%;background:${colors[i]};
+                    height:100%;border-radius:4px;transition:width 0.4s;"></div>
+      </div>
+      <span style="width:44px;font-size:0.88rem;">${(probs[i]*100).toFixed(1)}%</span>
+    </div>`).join("");
+
+  document.getElementById("bar-chart").innerHTML = html;
+  document.getElementById("chart-container").style.display = "block";
+}
+
+/* ---- load models on first classify ---- */
+async function ensureModels() {
+  if (modelsLoaded) return;
+  setStatus("Loading sentence encoder (first-time download ~22 MB)…");
+
+  const { pipeline } =
+    await import("https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2");
+  extractor = await pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2",
+                              { quantized: true });
+
+  setStatus("Loading classifier weights…");
+  const base = window.location.pathname.replace(/\/[^/]*$/, "");
+  const [pRes, lRes] = await Promise.all([
+    fetch(`${base}/models/pca_export.json`),
+    fetch(`${base}/models/lr_export.json`),
+  ]);
+  pcaData = await pRes.json();
+  lrData  = await lRes.json();
+
+  modelsLoaded = true;
+  setStatus("");
+}
+
+/* ---- main classify function ---- */
+window.classifyLyrics = async function () {
+  const text = document.getElementById("lyrics-input").value.trim();
+  if (!text) { setStatus("Please paste some lyrics first."); return; }
+
+  document.getElementById("classify-btn").disabled = true;
+  try {
+    await ensureModels();
+    setStatus("Encoding…");
+
+    /* 1. embed */
+    const out = await extractor(text, { pooling: "mean", normalize: true });
+    const emb = Array.from(out.data);                  // 384 floats
+
+    /* 2. append extra features with training-set means */
+    const extras = [
+      pcaData.extra_feature_means.lyric_word_count,
+      pcaData.extra_feature_means.sentiment,
+      pcaData.extra_feature_means.rhyme_density,
+      pcaData.extra_feature_means.repetition_ratio,
+      pcaData.extra_feature_means.is_english,
+    ];
+    const full = [...emb, ...extras];                  // 389 floats
+
+    /* 3. scale */
+    const scaled = full.map((v, i) =>
+      (v - pcaData.mean[i]) / (pcaData.scale[i] || 1));
+
+    /* 4. PCA */
+    const pc = pcaData.components.map(row =>
+      row.reduce((s, w, i) => s + w * scaled[i], 0));  // 100 floats
+
+    /* 5. logistic regression + softmax */
+    const logits = lrData.coef.map((row, c) =>
+      row.reduce((s, w, i) => s + w * pc[i], 0) + lrData.intercept[c]);
+    const probs = softmax(logits);
+
+    setStatus("");
+    renderBars(lrData.classes, probs);
+  } catch (err) {
+    setStatus(`Error: ${err.message}`);
+    console.error(err);
+  } finally {
+    document.getElementById("classify-btn").disabled = false;
+  }
+};
+</script>
+```

@@ -3,6 +3,7 @@ title: "Explore the Data"
 ---
 ```{python}
 #| include: false
+import os
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -613,5 +614,152 @@ fig.update_layout(
 fig.show()
 ```
 
-## Nostagia Sells
-<!-- TODO after fitting model to predict era. Also paste this visualization to the model result page? -->
+## Time Traveler Map
+
+Songs that are misclassified across decades — particularly modern songs predicted as vintage — are highlighted in gold below. This interactive UMAP is computed on the full corpus; use the dropdown to filter by true decade or classification status.
+
+```{python}
+#| label: tt-umap
+#| echo: false
+#| fig-cap: "Full-corpus UMAP colored by classification status. Gold 'time travelers' are 2010s/2020s songs whose lyrics the model reads as 1980s/1990s. Filter by decade or status using the dropdown."
+DECADES      = ["1980s", "1990s", "2000s", "2010s", "2020s"]
+umap_path = "data/processed/umap_data.parquet"
+
+if os.path.exists(umap_path):
+    full_umap = pd.read_parquet(umap_path).copy()
+    full_umap["status"] = "Correct"
+    full_umap.loc[
+        ~(full_umap["true_decade"] == full_umap["pred_decade"]) &
+        ~full_umap["is_time_traveler"], "status"] = "Misclassified"
+    full_umap.loc[full_umap["is_time_traveler"], "status"] = "Time Traveler"
+
+    color_map = {
+        "Correct":       "#aec7e8",
+        "Misclassified": "#d62728",
+        "Time Traveler": "#f5a623",
+    }
+
+    # build traces: one per (status × decade) combo for filtering
+    traces_status = []
+    for status, color in color_map.items():
+        sub = full_umap[full_umap["status"] == status]
+        traces_status.append(go.Scatter(
+            x=sub["UMAP1"], y=sub["UMAP2"],
+            mode="markers",
+            marker=dict(size=4, color=color, opacity=0.65),
+            name=status,
+            customdata=np.stack([
+                sub["track_name"], sub["artist_name"],
+                sub["true_decade"], sub["pred_decade"]
+            ], axis=-1),
+            hovertemplate=(
+                "<b>%{customdata[0]}</b> — %{customdata[1]}<br>"
+                "True: %{customdata[2]}  |  Predicted: %{customdata[3]}"
+                "<extra></extra>"
+            ),
+        ))
+
+    traces_decade = []
+    for dec, color in zip(DECADES, px.colors.qualitative.Set2):
+        sub = full_umap[full_umap["true_decade"] == dec]
+        traces_decade.append(go.Scatter(
+            x=sub["UMAP1"], y=sub["UMAP2"],
+            mode="markers",
+            marker=dict(size=4, color=color, opacity=0.65),
+            name=dec, visible=False,
+            customdata=np.stack([
+                sub["track_name"], sub["artist_name"],
+                sub["true_decade"], sub["pred_decade"]
+            ], axis=-1),
+            hovertemplate=(
+                "<b>%{customdata[0]}</b> — %{customdata[1]}<br>"
+                "True: %{customdata[2]}  |  Predicted: %{customdata[3]}"
+                "<extra></extra>"
+            ),
+        ))
+
+    n_s = len(traces_status)
+    n_d = len(traces_decade)
+    all_traces = traces_status + traces_decade
+
+    fig = go.Figure(data=all_traces)
+    fig.update_layout(
+        height=560,
+        updatemenus=[dict(
+            active=0,
+            buttons=[
+                dict(label="Color by Classification",
+                     method="update",
+                     args=[{"visible": [True]*n_s + [False]*n_d}]),
+                dict(label="Color by Decade",
+                     method="update",
+                     args=[{"visible": [False]*n_s + [True]*n_d}]),
+            ],
+            x=0.01, y=1.1, xanchor="left", yanchor="top",
+        )],
+        plot_bgcolor="white", paper_bgcolor="white",
+        margin=dict(l=0, r=0, t=60, b=0),
+        legend_title="",
+    )
+    fig.show()
+else:
+    print("Run era-classifier.qmd first to generate umap_data.parquet.")
+```
+
+## Nostalgia Sells
+
+Do modern songs that "sound vintage" — classified as 1980s or 1990s despite being released in the 2010s or 2020s — attract more listener engagement than correctly classified modern songs?
+
+```{python}
+#| label: nostalgia-viz
+#| echo: false
+#| fig-cap: "Genius pageview distributions for 2010s/2020s songs, split by classification outcome. The violin width reflects the density of observations at each pageview level."
+from scipy.stats import mannwhitneyu
+import warnings
+warnings.filterwarnings("ignore")
+
+if os.path.exists(umap_path):
+    master_pv = pd.read_parquet("data/processed/master.parquet")
+    if "sentiment" not in master_pv.columns:
+        feat = pd.read_parquet("data/processed/features.parquet")
+        master_pv = master_pv.merge(feat, on="track_id", how="left")
+
+    modern = master_pv[master_pv["decade"].isin(["2010s", "2020s"])].copy()
+    modern = modern.merge(
+        full_umap[["track_id", "pred_decade", "is_time_traveler"]],
+        on="track_id", how="left"
+    )
+    modern_pv = modern[modern["pageviews"].notna()].copy()
+    modern_pv["log_pv"]  = np.log10(modern_pv["pageviews"].clip(lower=1))
+    modern_pv["group"]   = modern_pv["is_time_traveler"].map(
+        {True: "Time Traveler\n(2010s–20s → 1980s–90s)",
+         False: "Correctly Classified\nModern"})
+
+    tt  = modern_pv.loc[modern_pv["is_time_traveler"],  "pageviews"]
+    cor = modern_pv.loc[~modern_pv["is_time_traveler"], "pageviews"]
+    stat_tt, p_tt = mannwhitneyu(tt, cor, alternative="greater")
+
+    fig = px.violin(
+        modern_pv, x="group", y="log_pv",
+        color="group",
+        color_discrete_map={
+            "Time Traveler\n(2010s–20s → 1980s–90s)": "#f5a623",
+            "Correctly Classified\nModern": "#aec7e8",
+        },
+        box=True, points=False, height=430,
+        labels={"log_pv": "Genius Pageviews (log₁₀)", "group": ""},
+    )
+    fig.add_annotation(
+        x=0.5, y=1.06, xref="paper", yref="paper",
+        text=f"Mann-Whitney U (one-sided greater): p = {p_tt:.3f}  "
+             f"| n(time travelers) = {len(tt):,}  n(correct) = {len(cor):,}",
+        showarrow=False, font=dict(size=10),
+    )
+    fig.update_layout(
+        showlegend=False, plot_bgcolor="white", paper_bgcolor="white",
+        margin=dict(l=0, r=0, t=55, b=0),
+    )
+    fig.show()
+else:
+    print("Run era-classifier.qmd first.")
+```
