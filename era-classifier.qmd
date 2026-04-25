@@ -1,12 +1,13 @@
 ---
-title: "Era Classifier: Can a Song's Lyrics Place It in Its Decade?"
+title: "Detailed Modeling of Era Classification"
 ---
 
 This page trains and evaluates supervised classifiers that predict a song's decade of origin from its lyrical embedding. All heavy computation is cached to disk on first run — subsequent renders load saved artifacts.
 
 ```{python}
 #| label: setup-classifier
-#| include: false
+#| include: false   
+
 import os, json, warnings
 import numpy as np
 import pandas as pd
@@ -20,7 +21,7 @@ from sklearn.decomposition import PCA
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import GridSearchCV, StratifiedKFold
 from sklearn.metrics import (classification_report, confusion_matrix,
-                              f1_score, precision_score, recall_score)
+                              f1_score, precision_score, recall_score, accuracy_score)
 import xgboost as xgb
 
 warnings.filterwarnings("ignore")
@@ -37,9 +38,9 @@ os.makedirs(MODELS_DIR, exist_ok=True)
 os.makedirs("docs/models", exist_ok=True)
 os.makedirs("data/processed", exist_ok=True)
 
-RETRAIN = not os.path.exists(f"{MODELS_DIR}/xgb_pca.joblib")
-RERUN_SHAP = not os.path.exists(f"{MODELS_DIR}/shap_full_vals.npy")
-RERUN_UMAP = not os.path.exists("data/processed/umap_data.parquet")
+# RETRAIN = not os.path.exists(f"{MODELS_DIR}/xgb_pca.joblib")
+# RERUN_SHAP = not os.path.exists(f"{MODELS_DIR}/shap_full_vals.npy")
+# RERUN_UMAP = not os.path.exists("data/processed/umap_data.parquet")
 ```
 
 ## 1. Feature Preparation
@@ -97,7 +98,7 @@ else:
         n       = len(aids)
         n_train = int(0.70 * n)
         n_val   = int(0.15 * n)
-        for a in aids[:n_train]:              split_map[a] = "train"
+        for a in aids[:n_train]: split_map[a] = "train"
         for a in aids[n_train:n_train+n_val]: split_map[a] = "val"
         for a in aids[n_train+n_val:]:        split_map[a] = "test"
 
@@ -105,10 +106,9 @@ else:
     master_df[["track_id", "split"]].to_parquet(SPLIT_PATH, index=False)
 
 split_counts = master_df["split"].value_counts()
-print(f"Split sizes — Train: {split_counts['train']:,}  Val: {split_counts['val']:,}  Test: {split_counts['test']:,}")
+print(f"Train: {split_counts['train']:,}  Val: {split_counts['val']:,}  Test: {split_counts['test']:,}")
 print("\nDecade balance per split:")
-print(master_df.pivot_table(index="decade", columns="split", values="track_id",
-                              aggfunc="count")[["train","val","test"]].fillna(0).astype(int))
+print(master_df.pivot_table(index="decade", columns="split", values="track_id", aggfunc="count")[["train","val","test"]].fillna(0).astype(int))
 ```
 
 ```{python}
@@ -131,7 +131,7 @@ y_all = master_df["decade_label"].values
 
 ## 3. Dimensionality Reduction via PCA
 
-A single `StandardScaler` is fit on the training set only (no data leakage), then 100 principal components are extracted. This reduces the 389-dimensional feature space (384 embedding dims + 5 engineered features) while retaining the majority of variance.
+A single `StandardScaler` is fit on the training set only to ensure no data leakage. We then apply PCA to the scaled features, retaining 95% of variance. This helps reduce the 389-dimensional feature space to a more manageable number of principal components while preserving most of the information.
 
 ```{python}
 #| label: pca-step
@@ -139,14 +139,10 @@ A single `StandardScaler` is fit on the training set only (no data leakage), the
 SCALER_PATH = f"{MODELS_DIR}/scaler.joblib"
 PCA_PATH    = f"{MODELS_DIR}/pca.joblib"
 
-if RETRAIN:
-    scaler = StandardScaler().fit(X_train)
-    joblib.dump(scaler, SCALER_PATH)
-    pca = PCA(n_components=100, random_state=42).fit(scaler.transform(X_train))
-    joblib.dump(pca, PCA_PATH)
-else:
-    scaler = joblib.load(SCALER_PATH)
-    pca    = joblib.load(PCA_PATH)
+scaler = StandardScaler().fit(X_train)
+joblib.dump(scaler, SCALER_PATH)
+pca = PCA(n_components=0.95, random_state=42).fit(scaler.transform(X_train))
+joblib.dump(pca, PCA_PATH)
 
 X_train_sc  = scaler.transform(X_train)
 X_val_sc    = scaler.transform(X_val)
@@ -158,11 +154,13 @@ X_val_pca   = pca.transform(X_val_sc)
 X_test_pca  = pca.transform(X_test_sc)
 X_all_pca   = pca.transform(X_all_sc)
 
+n_pcs  = pca.n_components_
 cumvar = np.cumsum(pca.explained_variance_ratio_)
-n95    = int(np.searchsorted(cumvar, 0.95)) + 1
-print(f"100 PCs explain {cumvar[-1]*100:.1f}% of variance. "
-      f"{n95} PCs needed for 95%.")
+print(f"{n_pcs} PCs retained, explaining {cumvar[-1]*100:.1f}% of variance.")
+# 229 PCs retained, explaining 95.0% of variance.
 ```
+
+229 PCs retained, explaining 95.0% of variance.
 
 ```{python}
 #| label: pca-plot
@@ -170,7 +168,7 @@ print(f"100 PCs explain {cumvar[-1]*100:.1f}% of variance. "
 #| fig-cap: "Cumulative explained variance of the top 100 principal components. The embedding space is moderately dense. 100 components are required to explain roughly 90% of variance."
 fig = go.Figure()
 fig.add_trace(go.Scatter(
-    x=list(range(1, 101)), y=cumvar * 100,
+    x=list(range(1, 300)), y=cumvar * 100,
     mode="lines", line=dict(color="#4e79a7", width=2)
 ))
 fig.add_hline(y=95, line_dash="dash", line_color="gray",
@@ -188,7 +186,7 @@ fig.show()
 
 ## 4. Baseline: Logistic Regression
 
-Multinomial logistic regression is run in two configurations — on 100 PCA components and on the full 389-dimensional scaled feature space — to isolate the effect of dimensionality reduction independently of the model class.
+Multinomial logistic regression is run in two configurations: on 100 PCA components and on the full 389-dimensional scaled feature space to isolate the effect of dimensionality reduction independently of the model class.
 
 ```{python}
 #| label: train-lr
@@ -196,42 +194,45 @@ Multinomial logistic regression is run in two configurations — on 100 PCA comp
 LR_PCA_PATH  = f"{MODELS_DIR}/lr_model.joblib"
 LR_FULL_PATH = f"{MODELS_DIR}/lr_full.joblib"
 
-RETRAIN_LR_FULL = not os.path.exists(LR_FULL_PATH)
-
-if RETRAIN_LR_FULL:
-    lr = LogisticRegression(C=1.0, max_iter=2000, solver="lbfgs",
+lr = LogisticRegression(C=1.0, max_iter=2000, solver="lbfgs",
                              random_state=42, n_jobs=-1)
-    lr.fit(X_train_pca, y_train)
-    joblib.dump(lr, LR_PCA_PATH)
+lr.fit(X_train_pca, y_train)
+joblib.dump(lr, LR_PCA_PATH)
 
-    lr_full = LogisticRegression(C=1.0, max_iter=2000, solver="lbfgs",
+lr_full = LogisticRegression(C=1.0, max_iter=2000, solver="lbfgs",
                                   random_state=42, n_jobs=-1)
-    lr_full.fit(X_train_sc, y_train)
-    joblib.dump(lr_full, LR_FULL_PATH)
-else:
-    lr      = joblib.load(LR_PCA_PATH)
-    lr_full = joblib.load(LR_FULL_PATH)
+lr_full.fit(X_train_sc, y_train)
+joblib.dump(lr_full, LR_FULL_PATH)
+
 
 lr_val_preds  = lr.predict(X_val_pca)
 lr_test_preds = lr.predict(X_test_pca)
 lr_val_f1     = f1_score(y_val,  lr_val_preds,  average="macro")
 lr_test_f1    = f1_score(y_test, lr_test_preds, average="macro")
+lr_val_acc  = accuracy_score(y_val,  lr_val_preds)
+lr_test_acc = accuracy_score(y_test, lr_test_preds)
 
 lr_full_val_preds  = lr_full.predict(X_val_sc)
 lr_full_test_preds = lr_full.predict(X_test_sc)
 lr_full_val_f1     = f1_score(y_val,  lr_full_val_preds,  average="macro")
 lr_full_test_f1    = f1_score(y_test, lr_full_test_preds, average="macro")
+lr_full_val_acc  = accuracy_score(y_val,  lr_full_val_preds)
+lr_full_test_acc = accuracy_score(y_test, lr_full_test_preds)
 
-print(f"LR (PCA)  — Val F1: {lr_val_f1:.3f}  Test F1: {lr_test_f1:.3f}")
-print(f"LR (Full) — Val F1: {lr_full_val_f1:.3f}  Test F1: {lr_full_test_f1:.3f}")
+print(f"LR (PCA) Val F1: {lr_val_f1:.3f}  Test F1: {lr_test_f1:.3f}")
+print(f"LR (Full) Val F1: {lr_full_val_f1:.3f}  Test F1: {lr_full_test_f1:.3f}")
+print(f"LR (PCA) Val Acc: {lr_val_acc:.3f}  Test Acc: {lr_test_acc:.3f}")
+print(f"LR (Full) Val Acc: {lr_full_val_acc:.3f}  Test Acc: {lr_full_test_acc:.3f}")
 ```
 
+Surprisingly, the PCA-reduced model slightly outperforms the full model in terms of both F1-score and accuracy, suggesting that dimensionality reduction may help mitigate noise and overfitting in this case. However, the differences are small, and even though it performs better than random chance (0.20), there is still significant room for improvement.
+
 ```{python}
-#| label: lr-report
+#| label: lr-pca-report
 #| echo: false
 #| tbl-cap: "Per-class precision, recall, and F1 for logistic regression (PCA features) on the held-out test set."
 report_lr = classification_report(
-    y_test, lr_test_preds, target_names=DECADES, output_dict=True
+    y_val, lr_val_preds, target_names=DECADES, output_dict=True
 )
 report_lr_df = (
     pd.DataFrame(report_lr).T
@@ -242,6 +243,7 @@ report_lr_df = (
 )
 report_lr_df["support"] = report_lr_df["support"].astype(int)
 report_lr_df.index.name = "Class"
+
 report_lr_df
 ```
 
@@ -250,7 +252,7 @@ report_lr_df
 #| echo: false
 #| tbl-cap: "Per-class precision, recall, and F1 for logistic regression (full 389-dim features) on the held-out test set."
 report_lr_full = classification_report(
-    y_test, lr_full_test_preds, target_names=DECADES, output_dict=True
+    y_val, lr_full_val_preds, target_names=DECADES, output_dict=True
 )
 report_lr_full_df = (
     pd.DataFrame(report_lr_full).T
@@ -268,21 +270,25 @@ report_lr_full_df
 #| label: lr-cm
 #| echo: false
 #| fig-cap: "Confusion matrix for logistic regression (PCA). Off-diagonal cells reveal which decades are conflated most."
-cm_lr = confusion_matrix(y_test, lr_test_preds)
+cm_lr = confusion_matrix(y_val, lr_val_preds)
 fig = px.imshow(
     pd.DataFrame(cm_lr, index=DECADES, columns=DECADES),
     text_auto=True, color_continuous_scale="Blues",
     labels=dict(x="Predicted Decade", y="True Decade", color="N"),
-    title="Logistic Regression (PCA) — Test Set Confusion Matrix",
+    title="Logistic Regression (PCA) Val Set Confusion Matrix",
 )
 fig.update_layout(height=420, plot_bgcolor="white", paper_bgcolor="white",
                   margin=dict(l=0, r=0, t=50, b=0))
 fig.show()
 ```
 
+It is evident that closer decades are more confused with each other, consistent with the hypothesis that adjacent eras share more lyrical vocabulary and themes. Moreover, the 2020s has the most correct predictions (296 correct compared to an average of about 120 correct predictions in other decades), suggesting that the modern era may have the most distinctive lyrical style.
+
 ## 5. XGBoost Classifier (PCA Features)
 
-5-fold cross-validated grid search over key hyperparameters is conducted on the training set only. The best configuration is then evaluated on the validation set.
+We also conducted a 5-fold cross-validated grid search over key hyperparameters. The best configuration is then evaluated on the validation set. Accuracy is used as the grid search metric since the dataset is balanced.
+
+Since XGBoost has built-in feature selection, it may perform well even without PCA. However, we start with PCA features to maintain a consistent comparison with logistic regression and to reduce computational load during hyperparameter tuning.
 
 ```{python}
 #| label: train-xgb-pca
@@ -290,93 +296,73 @@ fig.show()
 XGB_PCA_PATH = f"{MODELS_DIR}/xgb_pca.joblib"
 CV_PATH      = f"{MODELS_DIR}/gs_cv_results.parquet"
 
-# param_grid = {
-#     "n_estimators": [200, 400, 600],
-#     "max_depth": [3, 4, 6],
-#     "learning_rate": [0.05, 0.1],
-#     "min_child_weight": [1, 3],
-#     "subsample": [0.8],
-#     "colsample_bytree": [0.8],
-#     }
-# cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-# gs = GridSearchCV(
-#     xgb.XGBClassifier(
-#         objective="multi:softprob",
-#         tree_method="hist",
-#         verbosity=0, random_state=42, n_jobs=-1,
-#     ),
-#     param_grid, cv=cv, scoring="f1_macro",
-#     n_jobs=-1, verbose=0, refit=True,
-#     )
-# gs.fit(X_train_pca, y_train)
-# xgb_pca = gs.best_estimator_
-# joblib.dump(xgb_pca, XGB_PCA_PATH)
-# pd.DataFrame(gs.cv_results_).to_parquet(CV_PATH, index=False)
-# print(f"Best params: {gs.best_params_}")
-# print(f"Best CV F1: {gs.best_score_:.3f}")
-
-if RETRAIN:
-    param_grid = {
-        "n_estimators":     [200, 400, 600],
-        "max_depth":        [3, 4, 6],
-        "learning_rate":    [0.05, 0.1],
-        "min_child_weight": [1, 3],
-        "subsample":        [0.8],
-        "colsample_bytree": [0.8],
+param_grid = {
+    "n_estimators": [200, 400, 600],
+    "max_depth": [3, 4, 6],
+    "learning_rate": [0.05, 0.1],
+    "min_child_weight": [1, 3],
+    "subsample": [0.8],
+    "colsample_bytree": [0.8],
     }
-    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-    gs = GridSearchCV(
-        xgb.XGBClassifier(
-            objective="multi:softprob",
-            tree_method="hist",
-            verbosity=0, random_state=42, n_jobs=-1,
-        ),
-        param_grid, cv=cv, scoring="f1_macro",
-        n_jobs=-1, verbose=0, refit=True,
+cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+gs = GridSearchCV(
+    xgb.XGBClassifier(
+        objective="multi:softprob",
+        tree_method="hist",
+        verbosity=0, random_state=42, n_jobs=-1,
+    ),
+    param_grid, cv=cv, scoring="accuracy",  # since dataset is balanced, accuracy is a reasonable metric for grid search
+    n_jobs=-1, verbose=0, refit=True,
     )
-    gs.fit(X_train_pca, y_train)
-    xgb_pca = gs.best_estimator_
-    joblib.dump(xgb_pca, XGB_PCA_PATH)
-    pd.DataFrame(gs.cv_results_).to_parquet(CV_PATH, index=False)
-    print(f"Best params: {gs.best_params_}")
-    print(f"Best CV F1: {gs.best_score_:.3f}")
-else:
-    xgb_pca = joblib.load(XGB_PCA_PATH)
-    if os.path.exists(CV_PATH):
-        cv_df = pd.read_parquet(CV_PATH)
-        best_cv = cv_df.loc[cv_df["mean_test_score"].idxmax()]
-        print(f"Best CV F1 (loaded): {best_cv['mean_test_score']:.3f}")
+gs.fit(X_train_pca, y_train)
+xgb_pca = gs.best_estimator_
+joblib.dump(xgb_pca, XGB_PCA_PATH)
+pd.DataFrame(gs.cv_results_).to_parquet(CV_PATH, index=False)
+print(f"Best params: {gs.best_params_}")
+print(f"Best CV F1: {gs.best_score_:.3f}")
 
 xgb_pca_val_preds = xgb_pca.predict(X_val_pca)
 xgb_pca_test_preds = xgb_pca.predict(X_test_pca)
 xgb_pca_val_f1 = f1_score(y_val,  xgb_pca_val_preds,  average="macro")
 xgb_pca_test_f1 = f1_score(y_test, xgb_pca_test_preds, average="macro")
+xgb_pca_val_acc = accuracy_score(y_val, xgb_pca_val_preds)
+xgb_pca_test_acc = accuracy_score(y_test, xgb_pca_test_preds)
+
 print(f"XGB-PCA Val macro-F1: {xgb_pca_val_f1:.3f}, Test macro-F1: {xgb_pca_test_f1:.3f}")
+print(f"XGB-PCA Val Acc: {xgb_pca_val_acc:.3f}, Test Acc: {xgb_pca_test_acc:.3f}")
+
+# Best params: {'colsample_bytree': 0.8, 'learning_rate': 0.05, 'max_depth': 6, 'min_child_weight': 1, 'n_estimators': 600, 'subsample': 0.8}
+# Best CV F1: 0.497
+# XGB-PCA Val macro-F1: 0.432, Test macro-F1: 0.517
+# XGB-PCA Val Acc: 0.444, Test Acc: 0.540
 ```
+
+Even though the XGBoost model with PCA features achieves a test F1-score of 0.517, slightly outperforming logistic regression's 0.510, the difference is small. This suggests that while the non-linear modeling capacity of XGBoost may be capturing more complex relationships in the data, the pattern is not easy to discern. The validation F1 is lower than logistic regression, indicating potential overfitting to the training set.
 
 ```{python}
 #| label: cv-results
 #| echo: false
-#| tbl-cap: "Cross-validation grid search results. Mean macro-F1 across 5 folds, sorted by score."
+#| tbl-cap: "Cross-validation grid search results. Mean accuracy across 5 folds, sorted by score."
 if os.path.exists(CV_PATH):
     cv_df = pd.read_parquet(CV_PATH)
     param_cols = [c for c in cv_df.columns if c.startswith("param_")]
     cv_display = (
         cv_df[param_cols + ["mean_test_score", "std_test_score"]]
         .rename(columns={
-            "param_n_estimators":     "n_estimators",
-            "param_max_depth":        "max_depth",
-            "param_learning_rate":    "learning_rate",
+            "param_n_estimators": "n_estimators",
+            "param_max_depth": "max_depth",
+            "param_learning_rate": "learning_rate",
             "param_min_child_weight": "min_child_weight",
-            "param_subsample":        "subsample",
+            "param_subsample": "subsample",
             "param_colsample_bytree": "colsample_bytree",
-            "mean_test_score":        "Mean F1",
-            "std_test_score":         "Std F1",
+            "mean_test_score": "Mean Accuracy",
+            "std_test_score": "Std Accuracy",
         })
-        .sort_values("Mean F1", ascending=False)
+        .sort_values("Mean Accuracy", ascending=False)
         .round(4)
         .reset_index(drop=True)
     )
+
     cv_display
 ```
 
@@ -385,7 +371,7 @@ if os.path.exists(CV_PATH):
 #| echo: false
 #| tbl-cap: "Per-class precision, recall, and F1 for the best XGBoost (PCA) model on the held-out test set."
 report_xgb = classification_report(
-    y_test, xgb_pca_test_preds,
+    y_val, xgb_pca_val_preds,
     target_names=DECADES, output_dict=True
 )
 report_xgb_df = (
@@ -402,18 +388,20 @@ report_xgb_df
 ```{python}
 #| label: xgb-pca-cm
 #| echo: false
-#| fig-cap: "Confusion matrix for XGBoost (PCA features). Adjacent decades — particularly the 1990s and 2000s — show the most cross-decade confusion."
-cm_xgb = confusion_matrix(y_test, xgb_pca_test_preds)
+#| fig-cap: "Confusion matrix for XGBoost (PCA features). Adjacent decades show the most cross-decade confusion."
+cm_xgb_pca = confusion_matrix(y_val, xgb_pca_val_preds)
 fig = px.imshow(
-    pd.DataFrame(cm_xgb, index=DECADES, columns=DECADES),
+    pd.DataFrame(cm_xgb_pca, index=DECADES, columns=DECADES),
     text_auto=True, color_continuous_scale="Purples",
     labels=dict(x="Predicted Decade", y="True Decade", color="N"),
-    title="XGBoost (PCA) — Test Set Confusion Matrix",
+    title="XGBoost (PCA) Val Set Confusion Matrix",
 )
 fig.update_layout(height=420, plot_bgcolor="white", paper_bgcolor="white",
                   margin=dict(l=0, r=0, t=50, b=0))
 fig.show()
 ```
+
+The performance of XGB with PCA features is similar to logistic regression, with the same pattern of confusion between adjacent decades. The 2020s again has the most correct predictions and this is higher than the logistic regression, along with 1980s and 2010s. The 1990s and 2000s however have fewer correct predictions than logistic regression, suggesting that the non-linear model may be overfitting to idiosyncrasies in the training set that do not generalize as well to the validation and test sets.
 
 ## 6. XGBoost Classifier (Full Embeddings, No PCA)
 
@@ -424,9 +412,8 @@ XGBoost's built-in feature selection may obviate the need for explicit PCA. This
 #| echo: false
 XGB_FULL_PATH = f"{MODELS_DIR}/xgb_full.joblib"
 
-if RETRAIN:
-    best_p = xgb_pca.get_params()
-    xgb_full = xgb.XGBClassifier(
+best_p = xgb_pca.get_params()
+xgb_full = xgb.XGBClassifier(
         n_estimators=best_p["n_estimators"],
         max_depth=best_p["max_depth"],
         learning_rate=best_p["learning_rate"],
@@ -436,24 +423,33 @@ if RETRAIN:
         tree_method="hist",
         verbosity=0, random_state=42, n_jobs=-1,
     )
-    xgb_full.fit(X_train_sc, y_train)
-    joblib.dump(xgb_full, XGB_FULL_PATH)
-else:
-    xgb_full = joblib.load(XGB_FULL_PATH)
+xgb_full.fit(X_train_sc, y_train)
+joblib.dump(xgb_full, XGB_FULL_PATH)
 
 xgb_full_val_preds  = xgb_full.predict(X_val_sc)
 xgb_full_test_preds = xgb_full.predict(X_test_sc)
 xgb_full_val_f1     = f1_score(y_val,  xgb_full_val_preds,  average="macro")
 xgb_full_test_f1    = f1_score(y_test, xgb_full_test_preds, average="macro")
+xgb_full_val_acc = accuracy_score(y_val,  xgb_full_val_preds)
+xgb_full_test_acc = accuracy_score(y_test, xgb_full_test_preds)
 print(f"XGB-Full Val macro-F1: {xgb_full_val_f1:.3f}, Test macro-F1: {xgb_full_test_f1:.3f}")
+print(f"XGB-Full Val Acc: {xgb_full_val_acc:.3f}, Test Acc: {xgb_full_test_acc:.3f}")
 ```
+
+XGB-Full Val macro-F1: 0.478, Test macro-F1: 0.538
+XGB-Full Val Acc: 0.485, Test Acc: 0.561
+
+The full XGBoost model achieves the best performance across all configurations. The full model's test F1 of 0.538 is a meaningful boost over the PCA version's 0.517, and the validation F1 also improves from 0.432 to 0.478.
+
+Hence this model may benefit from having access to the full feature space and can effectively select the most informative features. The improvement over the PCA-reduced version indicates that some of the variance captured by the discarded principal components may contain useful signal for decade classification. 
+
 
 ```{python}
 #| label: xgb-full-report
 #| echo: false
 #| tbl-cap: "Per-class precision, recall, and F1 for the best XGBoost (Full Embeddings) model on the held-out test set."
 report_xgb_full = classification_report(
-    y_test, xgb_full_test_preds,
+    y_val, xgb_full_val_preds,
     target_names=DECADES, output_dict=True
 )   
 
@@ -468,61 +464,287 @@ report_xgb_full_df.index.name = "Class"
 report_xgb_full_df
 ```
 
-## 7. Model Comparison
+```{python}
+#| label: xgb-full-cm
+#| echo: false
+#| fig-cap: "Confusion matrix for XGBoost (Full Embeddings). Adjacent decades show the most cross-decade confusion."
+cm_xgb_full = confusion_matrix(y_val, xgb_full_val_preds)
+fig = px.imshow(
+    pd.DataFrame(cm_xgb_full, index=DECADES, columns=DECADES),
+    text_auto=True, color_continuous_scale="Purples",
+    labels=dict(x="Predicted Decade", y="True Decade", color="N"),
+    title="XGBoost (Full) Val Set Confusion Matrix",
+)
+fig.update_layout(height=420, plot_bgcolor="white", paper_bgcolor="white",
+                  margin=dict(l=0, r=0, t=50, b=0))
+fig.show()
+```
 
 ```{python}
+#| label: xgb-full-test-report
+#| echo: false
+#| tbl-cap: "Final evaluation: per-class precision, recall, and F1 for XGBoost (Full) on the held-out test set. This is reported once after model selection on the validation set."
+report_xgb_full_test = classification_report(
+    y_test, xgb_full_test_preds,
+    target_names=DECADES, output_dict=True
+)
+report_xgb_full_test_df = (
+    pd.DataFrame(report_xgb_full_test).T
+    .loc[DECADES + ["macro avg", "weighted avg"], ["precision", "recall", "f1-score", "support"]]
+    .rename(columns={"f1-score": "F1"})
+    .round(3)
+)
+report_xgb_full_test_df["support"] = report_xgb_full_test_df["support"].astype(int)
+report_xgb_full_test_df.index.name = "Class"
+report_xgb_full_test_df
+```
+
+## 7. Random Forest Classifer (PCA Features)
+A random forest classifier is also trained on the PCA-reduced features with a similar grid search to XGBoost. 
+
+```{python}
+#| label: rf-param-grid
+#| echo: false
+from sklearn.ensemble import RandomForestClassifier
+
+RF_PCA_PATH  = f"{MODELS_DIR}/rf_pca.joblib"
+RF_FULL_PATH = f"{MODELS_DIR}/rf_full.joblib"
+RF_CV_PATH   = f"{MODELS_DIR}/rf_cv_results.parquet"
+
+rf_param_grid = {
+    "n_estimators": [200, 400],
+    "max_depth":    [10, 20, None],
+    "max_features": ["sqrt", "log2"],
+    "min_samples_split": [2, 5],
+}
+
+rf_cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+rf_gs = GridSearchCV(
+    RandomForestClassifier(random_state=42, n_jobs=-1),
+    rf_param_grid, cv=rf_cv, scoring="accuracy",
+    n_jobs=-1, verbose=0, refit=True,
+)
+rf_gs.fit(X_train_pca, y_train)
+rf_pca = rf_gs.best_estimator_
+joblib.dump(rf_pca, RF_PCA_PATH)
+pd.DataFrame(rf_gs.cv_results_).to_parquet(RF_CV_PATH, index=False)
+print(f"RF Best params: {rf_gs.best_params_}")
+print(f"RF Best CV Accuracy: {rf_gs.best_score_:.3f}")
+```
+
+```{python}
+#| label: train-rf-pca
+#| echo: false
+
+# RF Best params: {'max_depth': 20, 'max_features': 'sqrt', 'min_samples_split': 2, 'n_estimators': 400}
+# RF Best CV Accuracy: 0.482
+
+# best_rf_p = rf_pca.get_params()
+
+rf_pca_val_preds   = rf_pca.predict(X_val_pca)
+rf_pca_test_preds  = rf_pca.predict(X_test_pca)
+
+rf_pca_val_acc   = accuracy_score(y_val,  rf_pca_val_preds)
+rf_pca_test_acc  = accuracy_score(y_test, rf_pca_test_preds)
+rf_pca_val_f1    = f1_score(y_val,  rf_pca_val_preds,  average="macro")
+rf_pca_test_f1   = f1_score(y_test, rf_pca_test_preds, average="macro")
+
+print(f"RF-PCA  Val Acc: {rf_pca_val_acc:.3f}  Test Acc: {rf_pca_test_acc:.3f}")
+
+# RF-PCA  Val Acc: 0.425  Test Acc: 0.521
+```
+
+```{python}
+#| label: rf-pca-report
+#| echo: false
+
+report_rf_pca = classification_report(
+    y_val, rf_pca_val_preds,
+    target_names=DECADES, output_dict=True
+)
+report_rf_pca_df = (
+    pd.DataFrame(report_rf_pca).T
+    .loc[DECADES + ["macro avg", "weighted avg"], ["precision", "recall", "f1-score", "support"]]
+    .rename(columns={"f1-score": "F1"})
+    .round(3)   
+)
+report_rf_pca_df["support"] = report_rf_pca_df["support"].astype(int)
+report_rf_pca_df.index.name = "Class"
+report_rf_pca_df
+```
+
+```{python}
+#| label: rf-pca-cm
+#| echo: false
+
+cm_rf_pca = confusion_matrix(y_val, rf_pca_val_preds)
+fig = px.imshow(
+    pd.DataFrame(cm_rf_pca, index=DECADES, columns=DECADES),
+    text_auto=True, color_continuous_scale="Greens",
+    labels=dict(x="Predicted Decade", y="True Decade", color="N"),
+    title="Random Forest (PCA) Val Set Confusion Matrix",
+)
+fig.show()
+```
+
+## 8. Random Forest Classifier (Full Embeddings)
+
+```{python}
+#| label: train-rf-full
+#| echo: false
+#| 
+rf_full = RandomForestClassifier(
+    n_estimators=400,
+    max_depth=20,
+    max_features="sqrt",
+    min_samples_split=2,
+    random_state=42, n_jobs=-1,
+)
+rf_full.fit(X_train_sc, y_train)
+joblib.dump(rf_full, RF_FULL_PATH)
+
+rf_full_val_preds  = rf_full.predict(X_val_sc)
+rf_full_test_preds = rf_full.predict(X_test_sc)
+
+rf_full_val_acc  = accuracy_score(y_val,  rf_full_val_preds)
+rf_full_test_acc = accuracy_score(y_test, rf_full_test_preds)
+rf_full_val_f1   = f1_score(y_val,  rf_full_val_preds,  average="macro")
+rf_full_test_f1  = f1_score(y_test, rf_full_test_preds, average="macro")
+
+print(f"RF-Full Val Acc: {rf_full_val_acc:.3f}  Test Acc: {rf_full_test_acc:.3f}")
+# RF-Full Val Acc: 0.454  Test Acc: 0.537
+```
+
+```{python}
+#| label: rf-full-report
+#| echo: false
+
+report_rf_full = classification_report(
+    y_val, rf_full_val_preds,
+    target_names=DECADES, output_dict=True
+)
+report_rf_full_df = (
+    pd.DataFrame(report_rf_full).T
+    .loc[DECADES + ["macro avg", "weighted avg"], ["precision", "recall", "f1-score", "support"]]
+    .rename(columns={"f1-score": "F1"})
+    .round(3)
+)
+report_rf_full_df["support"] = report_rf_full_df["support"].astype(int)
+report_rf_full_df.index.name = "Class"
+report_rf_full_df
+```
+
+```{python}
+#| label: rf-full-cm
+#| echo: false
+
+cm_rf_full = confusion_matrix(y_val, rf_full_val_preds)
+fig = px.imshow(
+    pd.DataFrame(cm_rf_full, index=DECADES, columns=DECADES),
+    text_auto=True, color_continuous_scale="Greens",
+    labels=dict(x="Predicted Decade", y="True Decade", color="N"),
+    title="Random Forest (Full) Val Set Confusion Matrix",
+)
+fig.show()
+```
+
+## 7. Model Comparison
+
+```{python} 
 #| label: model-comparison
 #| echo: false
 #| tbl-cap: "2×2 model comparison: logistic regression vs XGBoost crossed with PCA-reduced vs full feature space. Macro-averaged F1 is the primary metric; chance = 0.20."
 comparison = pd.DataFrame({
-    "Model":           ["LR (PCA)",    "LR (Full)",      "XGBoost (PCA)", "XGBoost (Full)"],
-    "Feature space":   ["100 PCs",     "389 dims",        "100 PCs",        "389 dims"],
-    "Val F1 (macro)":  [round(lr_val_f1, 3), round(lr_full_val_f1, 3),
-                        round(xgb_pca_val_f1, 3), round(xgb_full_val_f1, 3)],
-    "Test F1 (macro)": [round(lr_test_f1, 3), round(lr_full_test_f1, 3),
-                        round(xgb_pca_test_f1, 3), round(xgb_full_test_f1, 3)],
-})
+    "Model":          ["LR (PCA)", "LR (Full)", "XGBoost (PCA)", "XGBoost (Full)", "RF (PCA)", "RF (Full)"],
+    "Feature space":  [f"{n_pcs} PCs", "389 dims", f"{n_pcs} PCs", "389 dims", f"{n_pcs} PCs", "389 dims"],
+    "Val Acc":        [lr_val_acc, lr_full_val_acc, xgb_pca_val_acc, xgb_full_val_acc, rf_pca_val_acc, rf_full_val_acc],
+    # "Test Acc":       [lr_test_acc, lr_full_test_acc, xgb_pca_test_acc, xgb_full_test_acc, rf_pca_test_acc, rf_full_test_acc],
+    "Val F1 (macro)": [lr_val_f1, lr_full_val_f1, xgb_pca_val_f1, xgb_full_val_f1, rf_pca_val_f1, rf_full_val_f1],
+    # "Test F1 (macro)":[lr_test_f1, lr_full_test_f1, xgb_pca_test_f1, xgb_full_test_f1, rf_pca_test_f1, rf_full_test_f1],
+}).round(3)
 comparison
+```
+
+```{python}
+#| label: xgb-full-test-cm
+#| echo: false
+#| fig-cap: "Final confusion matrix for XGBoost (Full) on the held-out test set."
+
+# OUR CHOSEN MODEL CM FOR TEST SET 
+cm_xgb_full_test = confusion_matrix(y_test, xgb_full_test_preds)
+fig = px.imshow(
+    pd.DataFrame(cm_xgb_full_test, index=DECADES, columns=DECADES),
+    text_auto=True, color_continuous_scale="Purples",
+    labels=dict(x="Predicted Decade", y="True Decade", color="N"),
+    title="XGBoost (Full) Final Test Set Confusion Matrix",
+)
+fig.update_layout(height=420, plot_bgcolor="white", paper_bgcolor="white",
+                  margin=dict(l=0, r=0, t=50, b=0))
+fig.show()
 ```
 
 ```{python}
 #| label: save-results
 #| include: false
 # Save all metrics to JSON for results.qmd and final_report.qmd
+
+class NumpyEncoder(json.JSONEncoder):
+    def default(self, o):
+        if isinstance(o, np.integer): return int(o)
+        if isinstance(o, np.floating): return float(o)
+        if isinstance(o, np.ndarray): return o.tolist()
+        return super().default(o)
+
 results = {
     "n_train": int(len(train_df)),
     "n_val":   int(len(val_df)),
     "n_test":  int(len(test_df)),
-    "pca_n_components": 100,
+    "pca_n_components": n_pcs,
     "pca_explained_variance": float(cumvar[-1]),
-    "pca_n95": int(n95),
     "lr": {
         "val_f1_macro":  round(float(lr_val_f1), 4),
-        "test_f1_macro": round(float(lr_test_f1), 4),
-        "test_report":   report_lr,
-        "test_cm":       cm_lr.tolist(),
+        # "test_f1_macro": round(float(lr_test_f1), 4),
+        "val_report":   report_lr,
+        "val_cm":       cm_lr.tolist(),
     },
     "lr_full": {
         "val_f1_macro":  round(float(lr_full_val_f1), 4),
-        "test_f1_macro": round(float(lr_full_test_f1), 4),
-        "test_report":   report_lr_full,
-        "test_cm":       confusion_matrix(y_test, lr_full_test_preds).tolist(),
+        # "test_f1_macro": round(float(lr_full_test_f1), 4),
+        "val_report":   report_lr_full,
+        "val_cm":       confusion_matrix(y_val, lr_full_val_preds).tolist(),
     },
     "xgb_pca": {
         "val_f1_macro":  round(float(xgb_pca_val_f1), 4),
-        "test_f1_macro": round(float(xgb_pca_test_f1), 4),
-        "test_report":   report_xgb,
-        "test_cm":       cm_xgb.tolist(),
+        # "test_f1_macro": round(float(xgb_pca_test_f1), 4),
+        "val_report":   report_xgb,
+        "val_cm":       cm_xgb_pca.tolist(),
     },
     "xgb_full": {
         "val_f1_macro":  round(float(xgb_full_val_f1), 4),
+        # "test_f1_macro": round(float(xgb_full_test_f1), 4),
+        "val_report":   report_xgb_full,
+        "val_cm":       cm_xgb_full.tolist(),
+        # --- final test evaluation (chosen model only) ---
         "test_f1_macro": round(float(xgb_full_test_f1), 4),
-        "test_report":   report_xgb_full,
-        "test_cm":       confusion_matrix(y_test, xgb_full_test_preds).tolist(),
+        "test_acc":      round(float(xgb_full_test_acc), 4),
+        "test_report":   report_xgb_full_test,
+        "test_cm":       cm_xgb_full_test.tolist(),
+    },
+    "rf_pca": {
+        "val_f1_macro":  round(float(rf_pca_val_f1), 4),
+        # "test_f1_macro": round(float(rf_pca_test_f1), 4),
+        "val_report":   report_rf_pca,
+        "val_cm":       cm_rf_pca.tolist(),
+    },
+    "rf_full": {
+        "val_f1_macro":  round(float(rf_full_val_f1), 4),
+        # "test_f1_macro": round(float(rf_full_test_f1), 4),
+        "val_report":   report_rf_full,
+        "val_cm":       cm_rf_full.tolist(),
     },
 }
 with open("data/processed/model_results.json", "w") as f:
-    json.dump(results, f, indent=2)
+    json.dump(results, f, indent=2, cls=NumpyEncoder)
 ```
 
 ## 8. SHAP Feature Importance
@@ -537,26 +759,23 @@ SHAP_FULL_IDX  = f"{MODELS_DIR}/shap_full_idx.npy"
 
 ALL_FEATURE_NAMES = EMB_COLS + EXTRA_COLS   # 389 names
 
-if RERUN_SHAP:
-    np.random.seed(42)
-    n_shap  = min(500, len(X_test_sc))
-    idx     = np.random.choice(len(X_test_sc), n_shap, replace=False)
-    X_shap  = X_test_sc[idx]
+np.random.seed(42)
+n_shap  = min(500, len(X_test_sc))
+idx     = np.random.choice(len(X_test_sc), n_shap, replace=False)
+X_shap  = X_test_sc[idx]
 
-    explainer_full = shap.TreeExplainer(xgb_full)
-    raw_shap_full  = explainer_full.shap_values(X_shap)
+explainer_full = shap.TreeExplainer(xgb_full)
+raw_shap_full  = explainer_full.shap_values(X_shap)
 
-    if isinstance(raw_shap_full, list):
-        shap_full_arr = np.stack(raw_shap_full, axis=-1)   # (n, 389, 5)
-    elif raw_shap_full.ndim == 3:
-        shap_full_arr = raw_shap_full
-    else:
-        shap_full_arr = raw_shap_full[..., np.newaxis]
-
-    np.save(SHAP_FULL_PATH, shap_full_arr)
-    np.save(SHAP_FULL_IDX,  idx)
+if isinstance(raw_shap_full, list):
+    shap_full_arr = np.stack(raw_shap_full, axis=-1)   # (n, 389, 5)
+elif raw_shap_full.ndim == 3:
+    shap_full_arr = raw_shap_full
 else:
-    shap_full_arr = np.load(SHAP_FULL_PATH)
+    shap_full_arr = raw_shap_full[..., np.newaxis]
+
+np.save(SHAP_FULL_PATH, shap_full_arr)
+np.save(SHAP_FULL_IDX,  idx)
 
 # Mean |SHAP| across samples and classes: shape (389,)
 mean_abs_shap_full = np.abs(shap_full_arr).mean(axis=2).mean(axis=0)
@@ -592,6 +811,10 @@ fig.update_layout(
 fig.show()
 ```
 
+One striking pattern is the spike in repetition ratio during the 2010s, suggesting that highly repetitive song structures became especially influential in that era. This possibly reflects trends like hook-driven pop or streaming-optimized music. In contrast, lyric word count and rhyme density show more moderate and somewhat stable contributions, though there’s a hint of an inverse relationship in some decades (e.g., the 1990s-2010s), where denser rhymes may come with shorter lyrics. 
+
+Sentiment appears to have relatively low importance overall, with small fluctuations rather than a clear trend. The is_english feature remains minor, but its slight increase in the 2020s could suggest growing linguistic diversity in popular music. Overall, the chart highlights how structural elements like repetition have become more dominant over time, while traditional lyrical complexity plays a more nuanced role.
+
 ```{python}
 #| label: shap-top-overall
 #| echo: false
@@ -625,6 +848,8 @@ fig.update_xaxes(showgrid=True, gridcolor="lightgray")
 fig.show()
 ```
 
+We can see that engineered features like repetition_ratio, lyric_word_count, and rhyme_density are among the top overall features, confirming that the model is leveraging these interpretable lyrical properties much more than any single embedding dimension. is_english is not in the top 20 overall, which is surprising given its contextual importance in the modern era.
+
 ### What Do the Top PCs Encode? Correlation with Engineered Features
 
 For the PCA model, we can partially interpret which lyrical properties the most important principal components capture by correlating PC scores against the interpretable engineered features.
@@ -633,27 +858,24 @@ For the PCA model, we can partially interpret which lyrical properties the most 
 #| label: pc-correlation
 #| echo: false
 #| fig-cap: "Pearson correlation between each of the top 10 PCA components and the 5 engineered features, computed on the test set. Dark cells indicate that a PC has a meaningful linear relationship with a named feature, providing a bridge between the opaque PCA space and interpretable lyrical properties."
+#| 
 # Compute top-10 PCs by mean |SHAP| on the PCA-XGB model
 SHAP_PCA_PATH = f"{MODELS_DIR}/shap_pca_vals.npy"
 
-if not os.path.exists(SHAP_PCA_PATH):
-    np.random.seed(42)
-    n_shap_pca = min(500, len(X_test_pca))
-    idx_pca    = np.random.choice(len(X_test_pca), n_shap_pca, replace=False)
-    explainer_pca  = shap.TreeExplainer(xgb_pca)
-    raw_shap_pca   = explainer_pca.shap_values(X_test_pca[idx_pca])
-    if isinstance(raw_shap_pca, list):
-        shap_pca_arr = np.stack(raw_shap_pca, axis=-1)
-    elif raw_shap_pca.ndim == 3:
-        shap_pca_arr = raw_shap_pca
-    else:
-        shap_pca_arr = raw_shap_pca[..., np.newaxis]
-    np.save(SHAP_PCA_PATH, shap_pca_arr)
+np.random.seed(42)
+n_shap_pca = min(500, len(X_test_pca))
+idx_pca    = np.random.choice(len(X_test_pca), n_shap_pca, replace=False)
+explainer_pca  = shap.TreeExplainer(xgb_pca)
+raw_shap_pca   = explainer_pca.shap_values(X_test_pca[idx_pca])
+if isinstance(raw_shap_pca, list):
+    shap_pca_arr = np.stack(raw_shap_pca, axis=-1)
+elif raw_shap_pca.ndim == 3:
+    shap_pca_arr = raw_shap_pca
 else:
-    idx_pca      = np.arange(min(500, len(X_test_pca)))
-    shap_pca_arr = np.load(SHAP_PCA_PATH)
+    shap_pca_arr = raw_shap_pca[..., np.newaxis]
+np.save(SHAP_PCA_PATH, shap_pca_arr)
 
-mean_abs_pca = np.abs(shap_pca_arr).mean(axis=2).mean(axis=0)  # (100,)
+mean_abs_pca = np.abs(shap_pca_arr).mean(axis=2).mean(axis=0)  
 top10_pc_idx = np.argsort(mean_abs_pca)[-10:][::-1]            # most important 10
 
 # Correlate those PC scores with the 5 engineered features
@@ -679,12 +901,23 @@ fig = px.imshow(
     zmin=-1, zmax=1,
     labels=dict(x="Principal Component", y="Engineered Feature", color="r"),
 )
+
 fig.update_layout(
-    height=300, plot_bgcolor="white", paper_bgcolor="white",
-    margin=dict(l=0, r=0, t=20, b=0),
+    title=dict(
+        text="PC–Feature Correlation Heatmap (Top 10 PCs by SHAP Importance)",
+        font=dict(size=13),
+    ),
+    height=320,
+    plot_bgcolor="white",
+    paper_bgcolor="white",
+    font=dict(color="black"),
+    margin=dict(l=10, r=20, t=50, b=10),
 )
+
 fig.show()
 ```
+
+PC1 dominates the correlation structure, showing strong positive associations with is_english (r = 0.87) and rhyme_density (r = 0.67), suggesting it primarily captures a dimension related to English-language lyrical structure. sentiment also loads moderately on PC1 (r = 0.35) and PC2 (r = 0.25). The remaining components show weak correlations with all engineered features, indicating they capture semantic variation in the embedding space that is not directly expressed by the five hand-crafted metrics. Overall, the engineered features explain only a narrow slice of the PCA space, which is expected given that 384 of the 389 input dimensions are dense embedding coordinates.
 
 ## 9. UMAP Projection
 
@@ -695,23 +928,23 @@ A 2-dimensional UMAP projection of the test-set embeddings visualizes how songs 
 #| echo: false
 UMAP_PATH = "data/processed/umap_data.parquet"
 
-if RERUN_UMAP:
-    reducer = umap_lib.UMAP(
-        n_components=2, random_state=42,
-        n_neighbors=15, min_dist=0.1,
+
+reducer = umap_lib.UMAP(
+    n_components=2, random_state=42,
+    n_neighbors=15, min_dist=0.1,
     )
-    umap_2d = reducer.fit_transform(X_all_sc[:, :384])   # embeddings only
+umap_2d = reducer.fit_transform(X_all_sc[:, :384])
 
-    pred_all_pca  = le.inverse_transform(xgb_pca.predict(X_all_pca))
-    pred_all_full = le.inverse_transform(xgb_full.predict(X_all_sc))
-    true_all_str  = le.inverse_transform(y_all)
+pred_all_pca  = le.inverse_transform(xgb_pca.predict(X_all_pca))
+pred_all_full = le.inverse_transform(xgb_full.predict(X_all_sc))
+true_all_str  = le.inverse_transform(y_all)
 
-    umap_df = pd.DataFrame({
+umap_df = pd.DataFrame({
         "track_id":       master_df["track_id"].values,
         "track_name":     master_df["track_name"].values,
         "artist_name":    master_df["artist_name"].values,
         "true_decade":    true_all_str,
-        "pred_decade":    pred_all_pca,
+        "pred_decade":    pred_all_full,   # using the best model's predictions for the UMAP visualization
         "split":          master_df["split"].values,
         "UMAP1":          umap_2d[:, 0],
         "UMAP2":          umap_2d[:, 1],
@@ -719,16 +952,14 @@ if RERUN_UMAP:
         "popularity":     master_df["popularity"].values,
     })
 
-    umap_df["is_time_traveler"] = (
+umap_df["is_time_traveler"] = (
         umap_df["true_decade"].isin(["2010s", "2020s"]) &
         umap_df["pred_decade"].isin(["1980s", "1990s"])
     )
-    umap_df["correct"] = umap_df["true_decade"] == umap_df["pred_decade"]
+umap_df["correct"] = umap_df["true_decade"] == umap_df["pred_decade"]
 
-    umap_df.to_parquet(UMAP_PATH, index=False)
-    RERUN_UMAP = False
-else:
-    umap_df = pd.read_parquet(UMAP_PATH)
+umap_df.to_parquet(UMAP_PATH, index=False)
+
 
 test_umap = umap_df[umap_df["split"] == "test"].copy()
 print(f"Test set: {len(test_umap):,} tracks | "
@@ -736,10 +967,14 @@ print(f"Test set: {len(test_umap):,} tracks | "
       f"({100*test_umap['is_time_traveler'].mean():.1f}%)")
 ```
 
+
+Recall that we define time travelers as songs from the 2010s or 2020s that are misclassified as 1980s or 1990s. Using our best model so far (XGB Full), in 1492 tracks in the test set, the model detects 63 time travalers, accounting for 4.2% of the test set. This is a substantial number of songs that the model believes have a vintage lyrical style despite being released in the modern era, providing a meaningful sample for analyzing the nostalgia sells hypothesis.
+
+
 ```{python}
 #| label: umap-true-decade
 #| echo: false
-#| fig-cap: "UMAP projection of the test set colored by true decade. Clusters are visible but overlapping, reflecting that lyrics alone do not perfectly separate eras."
+#| fig-cap: "UMAP projection of the test set colored by true decade."
 fig = px.scatter(
     test_umap, x="UMAP1", y="UMAP2", color="true_decade",
     category_orders={"true_decade": DECADES},
@@ -794,8 +1029,8 @@ modern_df = modern_df.merge(
 )
 modern_pv = modern_df[modern_df["pageviews"].notna()].copy()
 modern_pv["group"] = modern_pv["is_time_traveler"].map(
-    {True: "Time Traveler\n(2010s–20s predicted as 1980s–90s)",
-     False: "Correctly Classified\nModern"}
+    {True: "Time Traveler",
+     False: "Correctly Classified"}
 )
 modern_pv["log_pageviews"] = np.log10(modern_pv["pageviews"].clip(lower=1))
 
@@ -809,39 +1044,78 @@ for g, sub in modern_pv.groupby("is_time_traveler"):
           f"mean = {sub['pageviews'].mean():,.0f}")
 ```
 
+Across the full dataset of modern tracks (2010s/2020s), the model identifies 116 time travelers out of 3,244 songs with pageview data. 
+
+The median pageviews for time travelers is 65422 compared to 90130 for correctly classified modern songs. The mean pageviews are 364626 for time travelers and 435056 for correctly classified songs. Both median and mean pageviews are actually lower for the time travelers, providing no support for the nostalgia sells hypothesis in this sample. However, it could also be due to the long tail of pageviews and the fact that only a small fraction of modern songs are classified as vintage, which may limit the statistical power of this analysis.
+
 ```{python}
-#| label: nostalgia-plot
+#| label: nostalgia-plot-log
 #| echo: false
-#| fig-cap: "Genius pageview distributions for modern songs (2010s/2020s) split by whether the model predicts them as vintage (1980s/1990s). Higher pageviews in the 'Time Traveler' group would support the nostalgia sells hypothesis."
+#| fig-cap: "Genius pageview distributions for modern songs (2010s/2020s) split by whether the model predicts them as vintage (1980s/1990s). Displayed in log scale to accommodate the wide range of pageviews."
+
 from scipy.stats import mannwhitneyu
-tt  = modern_pv.loc[modern_pv["is_time_traveler"],  "pageviews"]
-cor = modern_pv.loc[~modern_pv["is_time_traveler"], "pageviews"]
-stat, pval = mannwhitneyu(tt, cor, alternative="greater")
+
+# tt  = modern_pv.loc[modern_pv["is_time_traveler"],  "pageviews"]
+# cor = modern_pv.loc[~modern_pv["is_time_traveler"], "pageviews"]
+# stat, pval = mannwhitneyu(tt, cor, alternative="greater")
 
 fig = px.violin(
     modern_pv, x="group", y="log_pageviews",
     color="group",
     color_discrete_map={
-        "Time Traveler\n(2010s-20s predicted as 1980s-90s)": "#f5a623",
-        "Correctly Classified\nModern": "#aec7e8",
+        "Time Traveler": "#f5a623",
+        "Correctly Classified": "#aec7e8",
     },
     box=True, points=False, height=430,
     labels={"log_pageviews": "Pageviews (log)", "group": ""},
 )
-fig.add_annotation(
-    x=0.5, y=1.05, xref="paper", yref="paper",
-    text=f"Mann-Whitney U test: p = {pval:.3f}",
-    showarrow=False, font=dict(size=11),
-)
+fig.update_traces(spanmode="hard")
+fig.update_yaxes(gridcolor="lightgray")
+# fig.add_annotation(
+#     x=0.5, y=1.05, xref="paper", yref="paper",
+#     text=f"Mann-Whitney U test: p = {pval:.3f}",
+#     showarrow=False, font=dict(size=11),
+# )
 fig.update_layout(
+    title=dict(
+        text="Pageview Distribution by Classification Group (log scale)",
+        font=dict(size=13),
+    ),
     showlegend=False, plot_bgcolor="white", paper_bgcolor="white",
     margin=dict(l=0, r=0, t=50, b=0),
 )
 fig.show()
 ```
 
+```{python}
+#| label: nostalgia-plot
+#| echo: false
+#| fig-cap: "Genius pageview distributions for modern songs (2010s/2020s) split by whether the model predicts them as vintage (1980s/1990s)."
 
-## 11. Save Browser Inference Artifacts
+fig = px.violin(
+    modern_pv, x="group", y="pageviews",
+    color="group",
+    color_discrete_map={
+        "Time Traveler": "#f5a623",
+        "Correctly Classified": "#aec7e8",
+    },
+    box=True, points=False, height=430,
+    labels={"pageviews": "Pageviews", "group": ""},
+)
+fig.update_traces(spanmode="hard")
+fig.update_yaxes(gridcolor="lightgray")
+
+fig.update_layout(
+    title=dict(
+        text="Pageview Distribution by Classification Group",
+        font=dict(size=13),
+    ),
+    showlegend=False, plot_bgcolor="white", paper_bgcolor="white",
+    margin=dict(l=0, r=0, t=50, b=0),
+)
+fig.show()
+```
+
 
 ```{python}
 #| label: export-browser-artifacts

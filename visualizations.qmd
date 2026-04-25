@@ -17,43 +17,65 @@ master_df["genre"] = master_df["seed_query"].str.extract(r"^(\w+(?:\s\w+)?)\s+ye
 ```
 
 ## Lyric Word Count by Decade
+
 ```{python}
-#| label: wordcount-decade
-#| fig-cap: "Lyric word count distributions by decade. The 1990s shows the widest spread."
+#| label: wordcount-by-decade
 #| echo: false
+#| fig-cap: "Lyric word count distribution by decade"
+
+import plotly.express as px
+
+decade_order = ["1980s", "1990s", "2000s", "2010s", "2020s"]
+
+plot_df = master_df.dropna(subset=["lyric_word_count"]).copy()
+plot_df = plot_df[plot_df["lyric_word_count"] >= 0]
 
 fig = px.violin(
-    master_df.dropna(subset=["lyric_word_count"]),
+    plot_df,
     x="decade",
     y="lyric_word_count",
     category_orders={"decade": decade_order},
     color="decade",
-    color_discrete_sequence=px.colors.qualitative.Set2,  
-    box=False,       
-    points=False,      
-    height=500,
+    color_discrete_sequence=px.colors.qualitative.Set2,
+    box=True,   # closest equivalent to showing distribution summary
+    points=False,
     labels={
+        "decade": "Decade",
         "lyric_word_count": "Word Count",
-        "decade": "Decade"
     },
+    height=500,
 )
 
-fig.update_traces(opacity=0.8)
+fig.update_traces(
+    meanline_visible=False,
+    spanmode="hard"
+)
 
 fig.update_layout(
     title="Lyric Word Count Distribution by Decade",
     showlegend=False,
-    yaxis_range=[0, 100000],
     plot_bgcolor="white",
     paper_bgcolor="white",
     margin=dict(l=0, r=0, t=50, b=0),
 )
 
-# subtle gridlines (important)
-fig.update_yaxes(showgrid=True, gridcolor="lightgray")
+fig.update_yaxes(
+    title="Word Count",
+    range=[0, 2000],
+    showgrid=True,
+    gridcolor="lightgray"
+)
+
+fig.update_xaxes(title="Decade")
 
 fig.show()
 ```
+
+There is a clear and consistent decline in lyric word count from 1980s to 2020s. 
+
+When zooming out, we can see that the 1980s and 1990s distributions are wide and tall, with substantial mass in the upper range indicating that long-form lyrics were common in those decades. The 1990s in particular shows the widest spread, likely reflecting the dominance of hip hop and RnB in that era which, as seen in the genre analysis, tend toward higher word counts. From the 2000s onward the distributions become progressively narrower and more bottom-heavy. 
+
+This decade-level word count signal is potentially useful as a feature for the classifier, though as noted in the genre analysis, it may partially reflect the shifting genre composition of each decade rather than a pure temporal trend in songwriting style.
 
 ## Word Count Over Time
 ```{python}
@@ -76,16 +98,35 @@ fig.add_trace(go.Scatter(x=yearly["release_year"], y=yearly["mean"],
 fig.add_trace(go.Scatter(x=yearly["release_year"], y=yearly["median"],
     name="Median", line=dict(color="#D85A30", width=2, dash="dash")))
 fig.update_layout(
-    height=400,
+    title="Lyric Word Count Over Time",
+    height=420,
     xaxis_title="Release Year",
     yaxis_title="Word Count",
     plot_bgcolor="white",
     paper_bgcolor="white",
-    margin=dict(l=0, r=0, t=20, b=0),
-    legend=dict(orientation="h", y=1.05),
+    margin=dict(l=0, r=0, t=55, b=0),
+    legend=dict(
+        orientation="h",
+        y=1.08,
+        x=0,
+    ),
 )
+
+fig.update_xaxes(
+    showgrid=False,
+    tickmode="linear",
+    dtick=5
+)
+
+fig.update_yaxes(
+    showgrid=True,
+    gridcolor="lightgray",
+    zeroline=False
+)
+
 fig.show()
 ```
+
 
 ## Top TF-IDF Terms by Decade
 ```{python}
