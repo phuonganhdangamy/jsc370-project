@@ -21,7 +21,7 @@ website:
         href: results.qmd
     right:
       - text: "📄 Download Report"
-        href: docs/results.pdf
+        href: results.pdf
         target: _blank
       - icon: github
         href: https://github.com/phuonganhdangamy/jsc370-project

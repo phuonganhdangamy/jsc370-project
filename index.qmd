@@ -30,7 +30,7 @@ master_df = pd.read_csv("data/processed/master.csv")
   </div>
   <div class="stat-card">
     <div class="stat-label">Best model F1</div>
-    <div class="stat-value">TBD</div>
+    <div class="stat-value">47.8%</div>
     <div class="stat-desc">after training</div>
   </div>
 </div>
