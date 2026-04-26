@@ -171,6 +171,30 @@ comparison = pd.DataFrame({
         res["rf_pca"]["val_f1_macro"],
         res["rf_full"]["val_f1_macro"],
     ],
+    "Accuracy": [
+        res["lr"]["val_report"]["accuracy"],
+        res["lr_full"]["val_report"]["accuracy"],
+        res["xgb_pca"]["val_report"]["accuracy"],
+        res["xgb_full"]["val_report"]["accuracy"],
+        res["rf_pca"]["val_report"]["accuracy"],
+        res["rf_full"]["val_report"]["accuracy"],
+    ],
+    "Precision (macro)": [
+        res["lr"]["val_report"]["macro avg"]["precision"],
+        res["lr_full"]["val_report"]["macro avg"]["precision"],
+        res["xgb_pca"]["val_report"]["macro avg"]["precision"],
+        res["xgb_full"]["val_report"]["macro avg"]["precision"],
+        res["rf_pca"]["val_report"]["macro avg"]["precision"],
+        res["rf_full"]["val_report"]["macro avg"]["precision"],
+    ],
+    "Recall (macro)": [
+        res["lr"]["val_report"]["macro avg"]["recall"],
+        res["lr_full"]["val_report"]["macro avg"]["recall"],
+        res["xgb_pca"]["val_report"]["macro avg"]["recall"],
+        res["xgb_full"]["val_report"]["macro avg"]["recall"],
+        res["rf_pca"]["val_report"]["macro avg"]["recall"],
+        res["rf_full"]["val_report"]["macro avg"]["recall"],
+    ],
 }).round(3)
 comparison
 ```
@@ -241,7 +265,10 @@ fig.update_layout(
 fig.show()
 ```
 
-Misclassifications are concentrated on the immediate off-diagonal: decades are confused with their temporal neighbours rather than with eras two or more decades away. The 1990s–2000s boundary is the most permeable, followed by the 2000s–2010s transition. The 1980s are most frequently confused with the 1990s, while the 2020s are occasionally predicted as 2010s. This pattern is consistent with gradual lyrical drift rather than sharp era boundaries.
+The final test set confusion matrix reveals several striking patterns. The 2020s dominates with 317 correct predictions out of 402 songs (79% recall), by far the highest of any decade. This confirms that contemporary lyrical style is the most distinctive era in the corpus, likely driven by the combination of modern slang, Latin influence, and streaming-optimized song structures. The 1980s follows with 155 correct (49% recall), benefiting from its distinctive rock and dance-era vocabulary. The middle decades are substantially harder: the 2000s achieves only 124 correct (45% recall) and the 2010s only 110 (46% recall), with the 1990s sitting at 131 (52% recall). 
+
+
+The off-diagonal tells an equally interesting story. The 1990s bleeds heavily into the 2020s (30 songs predicted as 2020s), which is unexpected for non-adjacent decades and may reflect the growing trend of 90s revival aesthetics in modern music. The 2000s similarly leaks into the 2020s (42 songs), suggesting that some early-2000s lyrical styles have more in common with contemporary music than with the 1990s. The 1980s–1990s boundary remains the most classically confused adjacent pair (73 songs from the 1980s predicted as 1990s), consistent with the gradual transition from classic rock to grunge and early hip hop. Notably, almost no songs from any decade are predicted as 1980s except true 1980s tracks, meaning the model treats the 1980s as a fairly exclusive category that is hard to fake.
 
 ### Feature Importance
 
@@ -325,34 +352,87 @@ else:
 
 We define *time travelers* as songs released in the 2010s or 2020s that the model predicts as belonging to the 1980s or 1990s — songs whose lyrical identity reads as vintage despite their contemporary release date. Among the **`{python} res['n_test']`** test-set songs, **`{python} n_tt`** (`{python} f"{pct_tt:.1f}"`%) are classified as time travelers. Interactive examples are available in the UMAP visualization on the [Explore Data](visualizations.qmd) page.
 
-To test the secondary hypothesis, we compare Genius pageview counts between time travelers and correctly classified modern songs across the full dataset of 2010s/2020s tracks with available pageview data. @fig-nostalgia shows the distribution comparison, and a one-sided Mann-Whitney U test assesses whether time travelers attract systematically greater engagement.
+To test the secondary hypothesis, we compare Genius pageview counts between time travelers and correctly classified modern songs across the full dataset of 2010s/2020s tracks with available pageview data. 
 
 ```{python}
+#| label: nostalgia-plot-log
 #| echo: false
-#| label: fig-nostalgia
-#| fig-cap: "Genius pageview distributions for modern songs (2010s/2020s) split by whether the model predicts them as vintage (1980s/1990s). Displayed on a log scale to accommodate the wide range of values."
+#| fig-cap: "Genius pageview distributions for modern songs (2010s/2020s) split by whether the model predicts them as vintage (1980s/1990s). Displayed in log scale to accommodate the wide range of pageviews."
+
+from scipy.stats import mannwhitneyu
+
+# tt  = modern_pv.loc[modern_pv["is_time_traveler"],  "pageviews"]
+# cor = modern_pv.loc[~modern_pv["is_time_traveler"], "pageviews"]
+# stat, pval = mannwhitneyu(tt, cor, alternative="greater")
+
 fig = px.violin(
     modern_pv, x="group", y="log_pageviews",
     color="group",
-    color_discrete_map={"Time Traveler": "#f5a623", "Correctly Classified": "#aec7e8"},
-    box=True, points=False, height=400,
-    labels={"log_pageviews": "Genius Pageviews (log₁₀)", "group": ""},
+    color_discrete_map={
+        "Time Traveler": "#f5a623",
+        "Correctly Classified": "#aec7e8",
+    },
+    box=True, points=False, height=430,
+    labels={"log_pageviews": "Pageviews (log)", "group": ""},
 )
-fig.add_annotation(
-    x=0.5, y=1.06, xref="paper", yref="paper",
-    text=f"Mann-Whitney U (one-sided, H₁: time travelers > classified): p = {pval:.3f}",
-    showarrow=False, font=dict(size=11),
-)
+fig.update_traces(spanmode="hard")
+fig.update_yaxes(gridcolor="lightgray")
+# fig.add_annotation(
+#     x=0.5, y=1.05, xref="paper", yref="paper",
+#     text=f"Mann-Whitney U test: p = {pval:.3f}",
+#     showarrow=False, font=dict(size=11),
+# )
 fig.update_layout(
+    title=dict(
+        text="Pageview Distribution by Classification Group (log scale)",
+        font=dict(size=13),
+    ),
     showlegend=False, plot_bgcolor="white", paper_bgcolor="white",
     margin=dict(l=0, r=0, t=50, b=0),
 )
 fig.show()
 ```
 
-Time travelers have a median of **`{python} f"{tt_med:,.0f}"`** Genius pageviews compared to **`{python} f"{cor_med:,.0f}"`** for correctly classified modern songs. The Mann-Whitney U test yields p = `{python} f"{pval:.3f}"`. At α = 0.05, this result `{python} "supports" if pval < 0.05 else "does not support"` the secondary hypothesis that songs with vintage lyrical identity attract greater listener engagement.
+```{python}
+#| label: nostalgia-plot
+#| echo: false
+#| fig-cap: "Genius pageview distributions for modern songs (2010s/2020s) split by whether the model predicts them as vintage (1980s/1990s)."
+
+fig = px.violin(
+    modern_pv, x="group", y="pageviews",
+    color="group",
+    color_discrete_map={
+        "Time Traveler": "#f5a623",
+        "Correctly Classified": "#aec7e8",
+    },
+    box=True, points=False, height=430,
+    labels={"pageviews": "Pageviews", "group": ""},
+)
+fig.update_traces(spanmode="hard")
+fig.update_yaxes(gridcolor="lightgray")
+
+fig.update_layout(
+    title=dict(
+        text="Pageview Distribution by Classification Group",
+        font=dict(size=13),
+    ),
+    showlegend=False, plot_bgcolor="white", paper_bgcolor="white",
+    margin=dict(l=0, r=0, t=50, b=0),
+)
+fig.show()
+```
+
+The pageview distributions provide no support for the nostalgia sells hypothesis. 
+
+On the log scale, correctly classified modern songs have a visibly higher median (approximately 10^5, or 90,000 pageviews) compared to time travelers (approximately 10^4.8, or 65,000 pageviews), and the correctly classified group extends further into the upper tail - reaching past 10^7 while time travelers cap around 10^6.5. 
+
+The raw scale plot makes the extreme skew even more apparent: the correctly classified group contains songs with upwards of 17 million Genius pageviews while time travelers max out around 4 million. The vast majority of songs in both groups cluster near zero regardless of scale, confirming that a small number of viral outliers dominate the mean. Even on the median, time travelers do not outperform correctly classified songs. If a nostalgia sells effect exists in popular music, it is not detectable through Genius pageviews in this corpus, and the evidence leans in the opposite direction: the highest-engagement modern songs tend to be those that sound distinctly contemporary rather than vintage.
+
+
+It is worth noting that Genius pageviews are a narrow proxy for commercial success. Listener engagement in the modern era is more naturally measured through streaming platform play counts, YouTube views, TikTok usage, or social media virality. A song can accumulate enormous streaming numbers without ever driving significant lyric-lookup traffic on Genius, and conversely, a lyrically complex or nostalgic song may attract disproportionate Genius visits precisely because listeners want to parse its words rather than because it is commercially dominant. Hence, the absence of a nostalgia effect in this analysis should therefore be interpreted cautiously.
 
 ---
+
 
 ## IV. Conclusions and Summary
 
@@ -360,9 +440,9 @@ Time travelers have a median of **`{python} f"{tt_med:,.0f}"`** Genius pageviews
 
 This project investigated whether song lyrics carry sufficient temporal signal to reliably identify a song's decade of origin, and whether modern songs with vintage lyrical identities attract more listener engagement.
 
-On the first question, the answer is yes — but imperfectly. XGBoost trained on full lyrical embeddings augmented with engineered features achieves a macro-averaged F1 of `{python} f"{res['xgb_full']['test_f1_macro']:.3f}"` on the held-out test set, substantially above the 0.20 random-chance baseline. This confirms that lyrical language encodes meaningful temporal signal. However, classification degrades specifically at adjacent-decade boundaries — particularly the 1990s–2000s transition — supporting the hypothesis that lyrical evolution is gradual rather than discrete.
+On the first question, the answer is yes, but imperfectly. XGBoost trained on full lyrical embeddings augmented with engineered features achieves a macro-averaged F1 of `{python} f"{res['xgb_full']['test_f1_macro']:.3f}"` on the held-out test set, substantially above the 0.20 random-chance baseline. This confirms that lyrical language encodes meaningful temporal signal. However, classification degrades specifically at adjacent-decade boundaries — particularly the 1990s–2000s transition — supporting the hypothesis that lyrical evolution is gradual rather than discrete.
 
-On the second question, the pageview analysis `{python} "provides statistically significant evidence that time travelers attract greater engagement" if pval < 0.05 else "does not find statistically significant evidence that time travelers attract greater engagement"` at α = 0.05, `{python} "lending support to" if pval < 0.05 else "leaving open"` the nostalgia sells theory in the lyrical domain.
+On the second question, the pageview analysis does not find significant evidence that time travelers attract greater engagement, leaving open the nostalgia sells theory in the lyrical domain.
 
 ### Key Findings
 

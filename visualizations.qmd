@@ -1,5 +1,5 @@
 ---
-title: "Explore the Data"
+title: "Visualizations"
 ---
 ```{python}
 #| include: false
@@ -745,62 +745,4 @@ if os.path.exists(umap_path):
     fig.show()
 else:
     print("Run era-classifier.qmd first to generate umap_data.parquet.")
-```
-
-## Nostalgia Sells
-
-Do modern songs that "sound vintage" — classified as 1980s or 1990s despite being released in the 2010s or 2020s — attract more listener engagement than correctly classified modern songs?
-
-```{python}
-#| label: nostalgia-viz
-#| echo: false
-#| fig-cap: "Genius pageview distributions for 2010s/2020s songs, split by classification outcome. The violin width reflects the density of observations at each pageview level."
-from scipy.stats import mannwhitneyu
-import warnings
-warnings.filterwarnings("ignore")
-
-if os.path.exists(umap_path):
-    master_pv = pd.read_parquet("data/processed/master.parquet")
-    if "sentiment" not in master_pv.columns:
-        feat = pd.read_parquet("data/processed/features.parquet")
-        master_pv = master_pv.merge(feat, on="track_id", how="left")
-
-    modern = master_pv[master_pv["decade"].isin(["2010s", "2020s"])].copy()
-    modern = modern.merge(
-        full_umap[["track_id", "pred_decade", "is_time_traveler"]],
-        on="track_id", how="left"
-    )
-    modern_pv = modern[modern["pageviews"].notna()].copy()
-    modern_pv["log_pv"]  = np.log10(modern_pv["pageviews"].clip(lower=1))
-    modern_pv["group"]   = modern_pv["is_time_traveler"].map(
-        {True: "Time Traveler\n(2010s–20s → 1980s–90s)",
-         False: "Correctly Classified\nModern"})
-
-    tt  = modern_pv.loc[modern_pv["is_time_traveler"],  "pageviews"]
-    cor = modern_pv.loc[~modern_pv["is_time_traveler"], "pageviews"]
-    stat_tt, p_tt = mannwhitneyu(tt, cor, alternative="greater")
-
-    fig = px.violin(
-        modern_pv, x="group", y="log_pv",
-        color="group",
-        color_discrete_map={
-            "Time Traveler\n(2010s–20s → 1980s–90s)": "#f5a623",
-            "Correctly Classified\nModern": "#aec7e8",
-        },
-        box=True, points=False, height=430,
-        labels={"log_pv": "Genius Pageviews (log₁₀)", "group": ""},
-    )
-    fig.add_annotation(
-        x=0.5, y=1.06, xref="paper", yref="paper",
-        text=f"Mann-Whitney U (one-sided greater): p = {p_tt:.3f}  "
-             f"| n(time travelers) = {len(tt):,}  n(correct) = {len(cor):,}",
-        showarrow=False, font=dict(size=10),
-    )
-    fig.update_layout(
-        showlegend=False, plot_bgcolor="white", paper_bgcolor="white",
-        margin=dict(l=0, r=0, t=55, b=0),
-    )
-    fig.show()
-else:
-    print("Run era-classifier.qmd first.")
 ```
