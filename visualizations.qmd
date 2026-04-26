@@ -80,7 +80,7 @@ This decade-level word count signal is potentially useful as a feature for the c
 ## Word Count Over Time
 ```{python}
 #| label: wordcount-time
-#| fig-cap: "Mean and median lyric word count by release year. The mean-median gap narrows from the 2000s onward."
+#| fig-cap: "Mean and median lyric word count by release year."
 #| echo: false
 
 yearly = (
@@ -126,6 +126,8 @@ fig.update_yaxes(
 
 fig.show()
 ```
+
+The mean lyric word count is highly volatile across years, with notable spikes in the early 1980s and a dramatic peak around 1997–1998 that likely reflects the dominance of hip hop and rap in that era. The median, by contrast, remains far more stable throughout, hovering in the 300–500 word range across all decades. The persistent and wide gap between mean and median suggests that a small number of unusually long songs are pulling the average upward in most years, though this skew does appear to shrink from the 2000s onward as both lines converge
 
 
 ## Top TF-IDF Terms by Decade
@@ -241,10 +243,15 @@ fig.update_yaxes(
 fig.show()
 ```
 
+The TF-IDF terms reveal a clear evolution in lyrical vocabulary across decades. The 1980s are defined by rock and pop imaginery such as "man", "rock", "light", "dance", and "beat". The 1990s show a sharp shift toward hip hop wordplay, with explicit language and African-American Vernacular English terms alongside others like "man" and "girl". The 2000s mark the first appearance of Spanish-language tokens ("por," "est," "os," "para"), signaling the growing presence of Latin music in the corpus. This trend accelerates dramatically in the 2010s and especially the 2020s, where the top terms are almost entirely Spanish ("est," "qu," "por," "los," "pero," "una," "como"), reflecting Latin music's rise to mainstream dominance. 
+
+Across all decades, a small set of English words such as "man", "girl", "good", "tell" persist, suggesting some universal lyrical anchors regardless of era or genre.
+
+
 ## Artist Country of Origin by Decade
 ```{python}
 #| label: country-decade
-#| fig-cap: "Top 8 artist countries per decade. US dominates throughout; Latin countries rise sharply from the 2010s."
+#| fig-cap: "Top 8 artist countries per decade. Select decade from the dropdown."
 #| echo: false
 
 buttons = []
@@ -312,84 +319,15 @@ fig.update_yaxes(
 fig.show()
 ```
 
-## UMAP: Decade vs Genre
-```{python}
-#| label: umap-viz
-#| fig-cap: "UMAP embedding space. Toggle between decade and genre coloring to see that genre separates more cleanly than decade."
-#| echo: false
+The US dominates artist origin across all five decades. Beyond that, the composition shifts over time. 
 
-import umap
+The 1980s are defined by Anglophone and Western European representation: GB is nearly on par with the US, followed by IT, DE, CA, FR, and AU. The 1990s see GB drop sharply and Latin countries (MX, AR) and Turkey enter the picture for the first time. The 2000s cement Latin America's rise with MX and PR both cracking the top 4, while GB recovers slightly. The 2010s shift toward Northern Europe, with NL, SE, and NO appearing alongside GB and FR, suggesting the global spread of electronic and pop production. By the 2020s, the landscape is dramatically different, as PR jumps to second place and MX, CO also rank highly, reflecting Latin music's dominance, while South Korea (KR) enters the top 8, signaling K-pop's growing global footprint. GB, once nearly equal to the US in the 1980s, falls to seventh.
 
-emb_cols = [c for c in master_df.columns if c.startswith("emb_")]
-reducer = umap.UMAP(n_components=2, random_state=42, n_neighbors=15, min_dist=0.1)
-embedding_2d = reducer.fit_transform(master_df[emb_cols].values)
-
-umap_df = pd.DataFrame({
-    "UMAP1": embedding_2d[:, 0],
-    "UMAP2": embedding_2d[:, 1],
-    "Decade": master_df["decade"].values,
-    "Genre": master_df["genre"].values,
-    "Track": master_df["track_name"].values,
-    "Artist": master_df["artist_name"].values,
-})
-
-fig_decade = px.scatter(umap_df, x="UMAP1", y="UMAP2", color="Decade",
-    hover_data=["Track", "Artist"], opacity=0.5, height=500,
-    color_discrete_sequence=px.colors.qualitative.Pastel,
-    category_orders={"Decade": decade_order})
-fig_decade.update_traces(marker=dict(size=6))
-
-fig_genre = px.scatter(umap_df, x="UMAP1", y="UMAP2", color="Genre",
-    hover_data=["Track", "Artist", "Decade"], opacity=0.5, height=500,
-    color_discrete_sequence=px.colors.qualitative.Safe)
-fig_genre.update_traces(marker=dict(size=6))
-
-# show decade by default; genre toggled via buttons
-for trace in fig_genre.data:
-    trace.visible = False
-
-fig = go.Figure(data=list(fig_decade.data) + list(fig_genre.data))
-n_decade = len(fig_decade.data)
-n_genre = len(fig_genre.data)
-
-fig.update_layout(
-    height=500,
-    updatemenus=[dict(
-        active=0,
-        buttons=[
-            dict(label="Color by Decade", method="update",
-                args=[{"visible": [True]*n_decade + [False]*n_genre}]),
-            dict(label="Color by Genre", method="update",
-                args=[{"visible": [False]*n_decade + [True]*n_genre}]),
-        ],
-        x=0.01, y=1.1, xanchor="left", yanchor="top",
-    )],
-    plot_bgcolor="white",
-    paper_bgcolor="white",
-    margin=dict(l=0, r=0, t=50, b=0),
-)
-fig.show()
-```
-
-
-# Page Views 
 ```{python}
 #| label: pageviews-setup
 #| include: false
 pv_df = master_df[master_df["pageviews"].notna()].copy()
 pv_df["log_pageviews"] = np.log10(pv_df["pageviews"])
-```
-
-## Page Views by Decade
-```{python}
-#| label: pageviews-by-decade
-#| fig-cap: "Distribution of page views across decades"
-#| echo: false
-
-fig = px.histogram(pv_df, x="log_pageviews", color="decade", nbins=30,
-    labels={"log_pageviews": "Log(Page Views)"})
-fig.update_layout(height=500)
-fig.show()
 ```
 
 ## Top 10 Most Viewed Songs by Decade
@@ -408,7 +346,7 @@ for i, decade in enumerate(decade_order):
         .nlargest(10, "pageviews")
         .sort_values("pageviews")
     )
-    top["label"] = top["track_name"] + " (by " + top["artist_name"] + ")"
+    top["label"] = top["track_name"] 
     
     traces.append(go.Bar(
         x=top["pageviews"],
@@ -559,6 +497,8 @@ fig.update_layout(
 fig.show()
 ```
 
+Sentiment distributions are broadly similar across all decades, with medians consistently in the positive range and full spreads reaching both extremes. However, a subtle but steady downward shift is visible from the 1980s onward. The 2010s and 2020s show the most balanced upper-lower split, suggesting lyrics have become more emotionally ambivalent over time. 
+
 ## Repetition Ratio by Decade
 ```{python}
 #| label: repetition-by-decade
@@ -584,6 +524,8 @@ fig.update_layout(
 )
 fig.show()
 ```
+
+Repetition ratio increases gradually and consistently from the 1980s to the 2010s, with medians rising and interquartile ranges shifting upward over time. The 1980s distribution is wide and bottom-heavy, with considerable mass near zero indicating many songs with low repetition, while the 1990s show a similar but slightly tighter spread. From the 2000s onward, the bulk of the distribution consolidates in the middle range, and by the 2010s the median reaches its highest point across all decades. The 2020s pull back slightly, with a lower median and a more compressed distribution, though still higher than the 1980s and 1990s baseline. This trend toward higher repetition may reflect the increasing dominance of pop and hip hop genres, which tend to rely more heavily on chorus-driven structures and catchy hooks, as well as broader shifts in songwriting style favoring simplicity and memorability.
 
 ## Rhyme Density by Decade
 ```{python}
@@ -611,11 +553,13 @@ fig.update_layout(
 fig.show()
 ```
 
+Rhyme density remains relatively high and stable from the 1980s through the 2010s, with medians consistently around 0.65–0.75 and distributions concentrated in the upper half of the range. The 1980s show the tightest clustering near the top, while the 1990s and 2000s introduce more spread downward without meaningfully shifting the median. The 2010s maintain a similar central tendency but with a slightly longer lower tail. The most striking change comes in the 2020s, as  the median drops to around 0.4–0.5 and the interquartile range widens considerably.
+
 ## Language Distribution by Decade
 ```{python}
 #| label: language-by-decade
 #| echo: false
-#| fig-cap: "Detected language distribution by decade. The rise of Spanish-language tracks from the 2000s onward directly reflects the growing mainstream presence of Latin music in the corpus."
+#| fig-cap: "Detected language distribution by decade."
 
 # bin rare languages into "other"
 lang_df = master_df.dropna(subset=["language"]).copy()
@@ -655,94 +599,4 @@ fig.update_layout(
 fig.show()
 ```
 
-## Time Traveler Map
-
-Songs that are misclassified across decades — particularly modern songs predicted as vintage — are highlighted in gold below. This interactive UMAP is computed on the full corpus; use the dropdown to filter by true decade or classification status.
-
-```{python}
-#| label: tt-umap
-#| echo: false
-#| fig-cap: "Full-corpus UMAP colored by classification status. Gold 'time travelers' are 2010s/2020s songs whose lyrics the model reads as 1980s/1990s. Filter by decade or status using the dropdown."
-DECADES      = ["1980s", "1990s", "2000s", "2010s", "2020s"]
-umap_path = "data/processed/umap_data.parquet"
-
-if os.path.exists(umap_path):
-    full_umap = pd.read_parquet(umap_path).copy()
-    full_umap["status"] = "Correct"
-    full_umap.loc[
-        ~(full_umap["true_decade"] == full_umap["pred_decade"]) &
-        ~full_umap["is_time_traveler"], "status"] = "Misclassified"
-    full_umap.loc[full_umap["is_time_traveler"], "status"] = "Time Traveler"
-
-    color_map = {
-        "Correct":       "#aec7e8",
-        "Misclassified": "#d62728",
-        "Time Traveler": "#f5a623",
-    }
-
-    # build traces: one per (status × decade) combo for filtering
-    traces_status = []
-    for status, color in color_map.items():
-        sub = full_umap[full_umap["status"] == status]
-        traces_status.append(go.Scatter(
-            x=sub["UMAP1"], y=sub["UMAP2"],
-            mode="markers",
-            marker=dict(size=4, color=color, opacity=0.65),
-            name=status,
-            customdata=np.stack([
-                sub["track_name"], sub["artist_name"],
-                sub["true_decade"], sub["pred_decade"]
-            ], axis=-1),
-            hovertemplate=(
-                "<b>%{customdata[0]}</b> — %{customdata[1]}<br>"
-                "True: %{customdata[2]}  |  Predicted: %{customdata[3]}"
-                "<extra></extra>"
-            ),
-        ))
-
-    traces_decade = []
-    for dec, color in zip(DECADES, px.colors.qualitative.Set2):
-        sub = full_umap[full_umap["true_decade"] == dec]
-        traces_decade.append(go.Scatter(
-            x=sub["UMAP1"], y=sub["UMAP2"],
-            mode="markers",
-            marker=dict(size=4, color=color, opacity=0.65),
-            name=dec, visible=False,
-            customdata=np.stack([
-                sub["track_name"], sub["artist_name"],
-                sub["true_decade"], sub["pred_decade"]
-            ], axis=-1),
-            hovertemplate=(
-                "<b>%{customdata[0]}</b> — %{customdata[1]}<br>"
-                "True: %{customdata[2]}  |  Predicted: %{customdata[3]}"
-                "<extra></extra>"
-            ),
-        ))
-
-    n_s = len(traces_status)
-    n_d = len(traces_decade)
-    all_traces = traces_status + traces_decade
-
-    fig = go.Figure(data=all_traces)
-    fig.update_layout(
-        height=560,
-        updatemenus=[dict(
-            active=0,
-            buttons=[
-                dict(label="Color by Classification",
-                     method="update",
-                     args=[{"visible": [True]*n_s + [False]*n_d}]),
-                dict(label="Color by Decade",
-                     method="update",
-                     args=[{"visible": [False]*n_s + [True]*n_d}]),
-            ],
-            x=0.01, y=1.1, xanchor="left", yanchor="top",
-        )],
-        plot_bgcolor="white", paper_bgcolor="white",
-        margin=dict(l=0, r=0, t=60, b=0),
-        legend_title="",
-    )
-    fig.show()
-else:
-    print("Run era-classifier.qmd first to generate umap_data.parquet.")
-```
+English dominates the corpus throughout, but its share erodes dramatically over time. From roughly 85% in the 1980s, it dips to around 73% in the 1990s and 2000s, recovers slightly in the 2010s, then collapses to just about 44% in 2020s. Spanish grew steadily from roughly 5% in the 1980s to nearly 30% by the 2020s, directly mirroring Latin music's mainstream rise. French maintains a small but consistent presence across all decades. The "other" category expands noticeably in the 2020s, likely capturing the rise of K-pop and other non-Western music. Turkish (tr) and Tagalog (tl) appear as minor but persistent contributors from the 1990s onward, reflecting the global diversity of popular music even in earlier decades.

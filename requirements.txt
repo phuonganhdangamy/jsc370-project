@@ -40,3 +40,6 @@ umap-learn
 
 # Notebook / Quarto
 ipykernel
+
+# Image  
+kaleido           # for saving plotly figures as static images
