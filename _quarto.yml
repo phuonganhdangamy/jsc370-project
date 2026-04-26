@@ -6,6 +6,7 @@ project:
     - index.qmd
     - visualizations.qmd
     - results.qmd
+    - try-it.qmd
 
 website:
   title: "Sonic Time Travelers"
@@ -19,6 +20,8 @@ website:
         href: era-classifier.qmd
       - text: "Results Summary"
         href: results.qmd
+      - text: "Try the Classifier"
+        href: try-it.qmd
     right:
       - text: "📄 Download Report"
         href: results.pdf

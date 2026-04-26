@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>Sonic Time Travelers</title>
+<title>Try the Era Classifier – Sonic Time Travelers</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -72,7 +72,7 @@ ul.task-list li input[type="checkbox"] {
 
 </head>
 
-<body class="nav-fixed quarto-light">
+<body class="nav-fixed fullcontent quarto-light">
 
 <div id="quarto-search-results"></div>
   <header id="quarto-header" class="headroom fixed-top">
@@ -90,7 +90,7 @@ ul.task-list li input[type="checkbox"] {
           <div class="collapse navbar-collapse" id="navbarCollapse">
             <ul class="navbar-nav navbar-nav-scroll me-auto">
   <li class="nav-item">
-    <a class="nav-link active" href="./index.html" aria-current="page"> 
+    <a class="nav-link" href="./index.html"> 
 <span class="menu-text">Home</span></a>
   </li>  
   <li class="nav-item">
@@ -106,7 +106,7 @@ ul.task-list li input[type="checkbox"] {
 <span class="menu-text">Results Summary</span></a>
   </li>  
   <li class="nav-item">
-    <a class="nav-link" href="./try-it.html"> 
+    <a class="nav-link active" href="./try-it.html" aria-current="page"> 
 <span class="menu-text">Try the Classifier</span></a>
   </li>  
 </ul>
@@ -131,25 +131,13 @@ ul.task-list li input[type="checkbox"] {
 <div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
 <!-- sidebar -->
 <!-- margin-sidebar -->
-    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
-        <nav id="TOC" role="doc-toc" class="toc-active">
-    <h2 id="toc-title">On this page</h2>
-   
-  <ul>
-  <li><a href="#background" id="toc-background" class="nav-link active" data-scroll-target="#background">Background</a></li>
-  <li><a href="#research-question" id="toc-research-question" class="nav-link" data-scroll-target="#research-question">Research Question</a></li>
-  <li><a href="#data-sources" id="toc-data-sources" class="nav-link" data-scroll-target="#data-sources">Data Sources</a></li>
-  <li><a href="#modeling-summary" id="toc-modeling-summary" class="nav-link" data-scroll-target="#modeling-summary">Modeling Summary</a></li>
-  </ul>
-</nav>
-    </div>
+    
 <!-- main -->
 <main class="content" id="quarto-document-content">
 
 <header id="title-block-header" class="quarto-title-block default">
 <div class="quarto-title">
-<h1 class="title">Sonic Time Travelers</h1>
-<p class="subtitle lead">Can a song’s lyrical identity place it in its era, and do retro-sounding modern songs sell better?</p>
+<h1 class="title">Try the Era Classifier</h1>
 </div>
 
 
@@ -166,48 +154,138 @@ ul.task-list li input[type="checkbox"] {
 </header>
 
 
-<div class="stat-grid">
-  <div class="stat-card">
-    <div class="stat-label">Tracks analyzed</div>
-    <div class="stat-value">9,176</div>
-    <div class="stat-desc">with lyrical embeddings</div>
+<p>Paste any block of song lyrics and the classifier will predict which decade they sound like they’re from <strong>1980s through 2020s</strong>.</p>
+<p>The model running here is <strong>XGBoost (Full)</strong>, the best-performing configuration from the modeling analysis: trained on 384-dimensional lyrical embeddings plus 5 engineered features (word count, sentiment, rhyme density, repetition ratio, and language), with no PCA reduction. It achieves a macro-averaged F1 of 0.538 on the held-out test set, well above the 0.20 random-chance baseline.</p>
+<p>On first use, two files are downloaded and cached by your browser: the sentence embedding model (~22 MB) and the XGBoost tree structure. Subsequent clicks are instant.</p>
+<div id="era-widget" style="border:1px solid #ddd; border-radius:8px; padding:1.4rem; margin:1.5rem 0; background:#fafafa;">
+
+  <p style="margin:0 0 0.6rem; font-weight:600;">Paste song lyrics here:</p>
+
+  <textarea id="lyrics-input" rows="10" style="width:100%; box-sizing:border-box; font-size:0.9rem; padding:0.5rem;
+           border:1px solid #ccc; border-radius:4px; resize:vertical; font-family:inherit;" placeholder="e.g. I was running through the jungle on a moonlit night..."></textarea>
+
+  <div style="margin-top:0.8rem; display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
+    <button id="classify-btn" onclick="classifyLyrics()" style="background:#4e79a7; color:white; border:none; border-radius:5px;
+             padding:0.5rem 1.4rem; font-size:0.95rem; cursor:pointer;">
+      Classify Era
+    </button>
+    <span id="status-msg" style="font-size:0.88rem; color:#555;"></span>
   </div>
-  <div class="stat-card">
-    <div class="stat-label">Decades covered</div>
-    <div class="stat-value">5</div>
-    <div class="stat-desc">1980s through 2020s</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-label">Genius pageviews</div>
-    <div class="stat-value">73.3%</div>
-    <div class="stat-desc">tracks with engagement data</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-label">Best model F1</div>
-    <div class="stat-value">47.8%</div>
-    <div class="stat-desc">after training</div>
+
+  <div id="chart-container" style="display:none; margin-top:1.4rem;">
+    <p id="pred-headline" style="font-weight:600; font-size:1.1rem; margin:0 0 0.6rem;"></p>
+    <div id="bar-chart"></div>
   </div>
 </div>
-<section id="background" class="level2">
-<h2 class="anchored" data-anchor-id="background">Background</h2>
-<p>Music, like fashion, moves in cycles. Some contemporary artists are celebrated precisely for sounding like they belong to another era, a phenomenon sometimes called <em>nostalgic branding</em>. This raises a testable question: is lyrical era-identity measurable, and does sounding vintage actually correlate with listener engagement?</p>
-</section>
-<section id="research-question" class="level2">
-<h2 class="anchored" data-anchor-id="research-question">Research Question</h2>
-<blockquote class="blockquote">
-<p><em>Can a song’s lyrical identity reliably place it in its era, and do modern songs whose lyrics read as vintage actually engage listeners more?</em></p>
-</blockquote>
-</section>
-<section id="data-sources" class="level2">
-<h2 class="anchored" data-anchor-id="data-sources">Data Sources</h2>
-<p>Data was collected live across three APIs: <strong>Spotify</strong> for track metadata and decade labeling, <strong>Genius</strong> for song lyrics and page view counts, and <strong>MusicBrainz</strong> for artist country of origin and genre tags.</p>
-</section>
-<section id="modeling-summary" class="level2">
-<h2 class="anchored" data-anchor-id="modeling-summary">Modeling Summary</h2>
-<p><a href="docs/results.pdf" class="btn-report">Download the full report (PDF)</a></p>
+
+<script type="module">
+let extractor = null, scalerData = null, xgbData = null, modelsLoaded = false;
+
+function setStatus(msg) {
+  document.getElementById("status-msg").textContent = msg;
+}
+
+function softmax(arr) {
+  const m = Math.max(...arr);
+  const e = arr.map(v => Math.exp(v - m));
+  const s = e.reduce((a, b) => a + b, 0);
+  return e.map(v => v / s);
+}
+
+function renderBars(classes, probs) {
+  const predIdx = probs.indexOf(Math.max(...probs));
+  document.getElementById("pred-headline").textContent =
+    `Predicted Era: ${classes[predIdx]}  (${(probs[predIdx]*100).toFixed(1)}% confidence)`;
+
+  const colors = ["#66c2a5","#fc8d62","#8da0cb","#e78ac3","#a6d854"];
+  const html = classes.map((cls, i) => `
+    <div style="display:flex;align-items:center;margin:6px 0;gap:8px;">
+      <span style="width:52px;text-align:right;font-size:0.88rem;flex-shrink:0;">${cls}</span>
+      <div style="flex:1;background:#eee;border-radius:4px;overflow:hidden;height:24px;">
+        <div style="width:${(probs[i]*100).toFixed(1)}%;background:${colors[i]};
+                    height:100%;border-radius:4px;transition:width 0.5s;"></div>
+      </div>
+      <span style="width:48px;font-size:0.88rem;">${(probs[i]*100).toFixed(1)}%</span>
+    </div>`).join("");
+
+  document.getElementById("bar-chart").innerHTML = html;
+  document.getElementById("chart-container").style.display = "block";
+}
+
+function predictXGB(scaledFeatures, xgb) {
+  const { f, t, l, r, o, n_classes } = xgb;
+  const margins = new Array(n_classes).fill(0);
+  const n_trees = o.length - 1;
+  for (let tree = 0; tree < n_trees; tree++) {
+    let node = o[tree];
+    while (f[node] !== -1) {
+      node = scaledFeatures[f[node]] < t[node] ? l[node] : r[node];
+    }
+    margins[tree % n_classes] += t[node];
+  }
+  return softmax(margins);
+}
+
+async function ensureModels() {
+  if (modelsLoaded) return;
+  setStatus("Loading sentence encoder (first-time download ~22 MB)…");
+
+  const { pipeline } =
+    await import("https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2");
+  extractor = await pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2",
+                              { quantized: true });
+
+  setStatus("Loading XGBoost model…");
+  const base = window.location.pathname.replace(/\/[^/]*$/, "");
+  const [sRes, xRes] = await Promise.all([
+    fetch(`${base}/models/pca_export.json`),
+    fetch(`${base}/models/xgb_export.json`),
+  ]);
+  scalerData = await sRes.json();
+  xgbData    = await xRes.json();
+
+  modelsLoaded = true;
+  setStatus("");
+}
+
+window.classifyLyrics = async function () {
+  const text = document.getElementById("lyrics-input").value.trim();
+  if (!text) { setStatus("Please paste some lyrics first."); return; }
+
+  document.getElementById("classify-btn").disabled = true;
+  try {
+    await ensureModels();
+    setStatus("Encoding lyrics…");
+
+    const out = await extractor(text, { pooling: "mean", normalize: true });
+    const emb = Array.from(out.data);  // 384 floats
+
+    const em = scalerData.extra_feature_means;
+    const full = [...emb,
+      em.lyric_word_count, em.sentiment,
+      em.rhyme_density, em.repetition_ratio, em.is_english,
+    ];  // 389 floats
+
+    const scaled = full.map((v, i) =>
+      (v - scalerData.mean[i]) / (scalerData.scale[i] || 1));
+
+    setStatus("Running classifier…");
+    const probs = predictXGB(scaled, xgbData);
+
+    setStatus("");
+    renderBars(xgbData.classes, probs);
+  } catch (err) {
+    setStatus(`Error: ${err.message}`);
+    console.error(err);
+  } finally {
+    document.getElementById("classify-btn").disabled = false;
+  }
+};
+</script>
+<hr>
+<p><em>For the full modeling pipeline: feature engineering, training, SHAP analysis, and UMAP projections, see the <a href="./era-classifier.html">Model Implementation</a> page.</em></p>
 
 
-</section>
 
 </main> <!-- /main -->
 <script id="quarto-html-after-body" type="application/javascript">

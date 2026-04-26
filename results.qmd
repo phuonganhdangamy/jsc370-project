@@ -59,11 +59,17 @@ except (FileNotFoundError, json.JSONDecodeError) as e:
         "pageviews", "popularity"])
     master_df = pd.DataFrame(columns=["track_id", "decade", "pageviews", "popularity"])
 
+FIGURES_DIR = "figures"
+os.makedirs(FIGURES_DIR, exist_ok=True)
+
 def show_fig(fig, filename, width=900, height=None):
+    path = os.path.join(FIGURES_DIR, filename)
     h = height or fig.layout.height or 450
-    pio.write_image(fig, filename, scale=2, width=width, height=h)
-    display(Image(filename))
+    pio.write_image(fig, path, scale=2, width=width, height=h)
+    display(Image(path))
 ```
+
+See the full live website [here](https://phuonganhdangamy.github.io/jsc370-project/).
 
 ## I. Introduction
 
@@ -254,7 +260,7 @@ fig.update_layout(
     margin=dict(l=0, r=40, t=20, b=0),
 )
 
-show_fig(fig, "fig_f1_bar.png")
+show_fig(fig, "f1_bar.png")
 ```
 
 The 1980s and 2020s are the most reliably classified decades, while the 1990s and 2000s show the lowest F1 scores. This is consistent with the primary hypothesis that adjacent decades share more lyrical vocabulary and are therefore harder to distinguish.
@@ -279,7 +285,7 @@ fig.update_layout(
     height=420, plot_bgcolor="white", paper_bgcolor="white",
     margin=dict(l=0, r=0, t=20, b=0),
 )
-show_fig(fig, "fig_cm.png")
+show_fig(fig, "cm.png")
 ```
 
 The final test set confusion matrix reveals several striking patterns. The 2020s dominates with 317 correct predictions out of 402 songs (79% recall), by far the highest of any decade. This confirms that contemporary lyrical style is the most distinctive era in the corpus, likely driven by the combination of modern slang, Latin influence, and streaming-optimized song structures. The 1980s follows with 155 correct (49% recall), benefiting from its distinctive rock and dance-era vocabulary. The middle decades are substantially harder: the 2000s achieves only 124 correct (45% recall) and the 2010s only 110 (46% recall), with the 1990s sitting at 131 (52% recall). 
@@ -335,7 +341,7 @@ if os.path.exists(SHAP_FULL_PATH):
     )
     fig.update_xaxes(showgrid=True, gridcolor="lightgray")
 
-show_fig(fig, "fig_shap.png", height=500)
+show_fig(fig, "shap.png", height=500)
 ```
 
 Engineered features such as `repetition_ratio`, `lyric_word_count`, and `rhyme_density` rank among the top 20 overall features, appearing well above the majority of individual embedding dimensions. This confirms that the model leverages these interpretable structural properties rather than relying solely on semantic embedding coordinates. A notable pattern is the spike in `repetition_ratio` for the 2010s, consistent with the dominance of hook-driven, streaming-optimized song structures in that era.
@@ -377,7 +383,7 @@ To test the secondary hypothesis, we compare Genius pageview counts between time
 ```{python}
 #| label: nostalgia-plot-log
 #| echo: false
-#| fig-cap: "Genius pageview distributions for modern songs (2010s/2020s) split by whether the model predicts them as vintage (1980s/1990s). Displayed in log scale to accommodate the wide range of pageviews."
+#| fig-cap: "Genius pageview distributions for modern songs (2010s/2020s). Displayed in log scale to accommodate the wide range of pageviews."
 #| fig-format: png
 
 from scipy.stats import mannwhitneyu
@@ -411,13 +417,13 @@ fig.update_layout(
     showlegend=False, plot_bgcolor="white", paper_bgcolor="white",
     margin=dict(l=0, r=0, t=50, b=0),
 )
-show_fig(fig, "fig_nostalgia_log.png", height=430)
+show_fig(fig, "nostalgia_log.png", height=430)
 ```
 
 ```{python}
 #| label: nostalgia-plot
 #| echo: false
-#| fig-cap: "Genius pageview distributions for modern songs (2010s/2020s) split by whether the model predicts them as vintage (1980s/1990s)."
+#| fig-cap: "Genius pageview distributions for modern songs (2010s/2020s)"
 #| fig-format: png
 
 fig = px.violin(
@@ -441,7 +447,7 @@ fig.update_layout(
     showlegend=False, plot_bgcolor="white", paper_bgcolor="white",
     margin=dict(l=0, r=0, t=50, b=0),
 )
-show_fig(fig, "fig_nostalgia.png", height=430)
+show_fig(fig, "nostalgia.png", height=430)
 ```
 
 The pageview distributions provide no support for the nostalgia sells hypothesis. 

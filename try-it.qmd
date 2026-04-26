@@ -1,0 +1,145 @@
+---
+title: "Try the Era Classifier"
+toc: false
+---
+
+Paste any block of song lyrics and the classifier will predict which decade they sound like they're from **1980s through 2020s**.
+
+The model running here is **XGBoost (Full)**, the best-performing configuration from the modeling analysis: trained on 384-dimensional lyrical embeddings plus 5 engineered features (word count, sentiment, rhyme density, repetition ratio, and language), with no PCA reduction. It achieves a macro-averaged F1 of 0.538 on the held-out test set, well above the 0.20 random-chance baseline.
+
+On first use, two files are downloaded and cached by your browser: the sentence embedding model (~22 MB) and the XGBoost tree structure. Subsequent clicks are instant.
+
+```{=html}
+<div id="era-widget" style="border:1px solid #ddd; border-radius:8px; padding:1.4rem; margin:1.5rem 0; background:#fafafa;">
+
+  <p style="margin:0 0 0.6rem; font-weight:600;">Paste song lyrics here:</p>
+
+  <textarea id="lyrics-input" rows="10"
+    style="width:100%; box-sizing:border-box; font-size:0.9rem; padding:0.5rem;
+           border:1px solid #ccc; border-radius:4px; resize:vertical; font-family:inherit;"
+    placeholder="e.g. I was running through the jungle on a moonlit night..."></textarea>
+
+  <div style="margin-top:0.8rem; display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
+    <button id="classify-btn" onclick="classifyLyrics()"
+      style="background:#4e79a7; color:white; border:none; border-radius:5px;
+             padding:0.5rem 1.4rem; font-size:0.95rem; cursor:pointer;">
+      Classify Era
+    </button>
+    <span id="status-msg" style="font-size:0.88rem; color:#555;"></span>
+  </div>
+
+  <div id="chart-container" style="display:none; margin-top:1.4rem;">
+    <p id="pred-headline" style="font-weight:600; font-size:1.1rem; margin:0 0 0.6rem;"></p>
+    <div id="bar-chart"></div>
+  </div>
+</div>
+
+<script type="module">
+let extractor = null, scalerData = null, xgbData = null, modelsLoaded = false;
+
+function setStatus(msg) {
+  document.getElementById("status-msg").textContent = msg;
+}
+
+function softmax(arr) {
+  const m = Math.max(...arr);
+  const e = arr.map(v => Math.exp(v - m));
+  const s = e.reduce((a, b) => a + b, 0);
+  return e.map(v => v / s);
+}
+
+function renderBars(classes, probs) {
+  const predIdx = probs.indexOf(Math.max(...probs));
+  document.getElementById("pred-headline").textContent =
+    `Predicted Era: ${classes[predIdx]}  (${(probs[predIdx]*100).toFixed(1)}% confidence)`;
+
+  const colors = ["#66c2a5","#fc8d62","#8da0cb","#e78ac3","#a6d854"];
+  const html = classes.map((cls, i) => `
+    <div style="display:flex;align-items:center;margin:6px 0;gap:8px;">
+      <span style="width:52px;text-align:right;font-size:0.88rem;flex-shrink:0;">${cls}</span>
+      <div style="flex:1;background:#eee;border-radius:4px;overflow:hidden;height:24px;">
+        <div style="width:${(probs[i]*100).toFixed(1)}%;background:${colors[i]};
+                    height:100%;border-radius:4px;transition:width 0.5s;"></div>
+      </div>
+      <span style="width:48px;font-size:0.88rem;">${(probs[i]*100).toFixed(1)}%</span>
+    </div>`).join("");
+
+  document.getElementById("bar-chart").innerHTML = html;
+  document.getElementById("chart-container").style.display = "block";
+}
+
+function predictXGB(scaledFeatures, xgb) {
+  const { f, t, l, r, o, n_classes } = xgb;
+  const margins = new Array(n_classes).fill(0);
+  const n_trees = o.length - 1;
+  for (let tree = 0; tree < n_trees; tree++) {
+    let node = o[tree];
+    while (f[node] !== -1) {
+      node = scaledFeatures[f[node]] < t[node] ? l[node] : r[node];
+    }
+    margins[tree % n_classes] += t[node];
+  }
+  return softmax(margins);
+}
+
+async function ensureModels() {
+  if (modelsLoaded) return;
+  setStatus("Loading sentence encoder (first-time download ~22 MB)…");
+
+  const { pipeline } =
+    await import("https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2");
+  extractor = await pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2",
+                              { quantized: true });
+
+  setStatus("Loading XGBoost model…");
+  const base = window.location.pathname.replace(/\/[^/]*$/, "");
+  const [sRes, xRes] = await Promise.all([
+    fetch(`${base}/models/pca_export.json`),
+    fetch(`${base}/models/xgb_export.json`),
+  ]);
+  scalerData = await sRes.json();
+  xgbData    = await xRes.json();
+
+  modelsLoaded = true;
+  setStatus("");
+}
+
+window.classifyLyrics = async function () {
+  const text = document.getElementById("lyrics-input").value.trim();
+  if (!text) { setStatus("Please paste some lyrics first."); return; }
+
+  document.getElementById("classify-btn").disabled = true;
+  try {
+    await ensureModels();
+    setStatus("Encoding lyrics…");
+
+    const out = await extractor(text, { pooling: "mean", normalize: true });
+    const emb = Array.from(out.data);  // 384 floats
+
+    const em = scalerData.extra_feature_means;
+    const full = [...emb,
+      em.lyric_word_count, em.sentiment,
+      em.rhyme_density, em.repetition_ratio, em.is_english,
+    ];  // 389 floats
+
+    const scaled = full.map((v, i) =>
+      (v - scalerData.mean[i]) / (scalerData.scale[i] || 1));
+
+    setStatus("Running classifier…");
+    const probs = predictXGB(scaled, xgbData);
+
+    setStatus("");
+    renderBars(xgbData.classes, probs);
+  } catch (err) {
+    setStatus(`Error: ${err.message}`);
+    console.error(err);
+  } finally {
+    document.getElementById("classify-btn").disabled = false;
+  }
+};
+</script>
+```
+
+---
+
+*For the full modeling pipeline: feature engineering, training, SHAP analysis, and UMAP projections, see the [Model Implementation](era-classifier.qmd) page.*

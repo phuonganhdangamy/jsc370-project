@@ -235,12 +235,11 @@ print(f"LR (PCA) Val Acc: {lr_val_acc:.3f}  Test Acc: {lr_test_acc:.3f}")
 print(f"LR (Full) Val Acc: {lr_full_val_acc:.3f}  Test Acc: {lr_full_test_acc:.3f}")
 ```
 
-Surprisingly, the PCA-reduced model slightly outperforms the full model in terms of both F1-score and accuracy, suggesting that dimensionality reduction may help mitigate noise and overfitting in this case. However, the differences are small, and even though it performs better than random chance (0.20), there is still significant room for improvement.
 
 ```{python}
 #| label: lr-pca-report
 #| echo: false
-#| tbl-cap: "Per-class precision, recall, and F1 for logistic regression (PCA features) on the held-out test set."
+#| tbl-cap: "Per-class precision, recall, and F1 for logistic regression (PCA features) on the validation set."
 report_lr = classification_report(
     y_val, lr_val_preds, target_names=DECADES, output_dict=True
 )
@@ -260,7 +259,7 @@ report_lr_df
 ```{python}
 #| label: lr-full-report
 #| echo: false
-#| tbl-cap: "Per-class precision, recall, and F1 for logistic regression (full 389-dim features) on the held-out test set."
+#| tbl-cap: "Per-class precision, recall, and F1 for logistic regression (full 389-dim features) on the validation set."
 report_lr_full = classification_report(
     y_val, lr_full_val_preds, target_names=DECADES, output_dict=True
 )
@@ -275,6 +274,8 @@ report_lr_full_df["support"] = report_lr_full_df["support"].astype(int)
 report_lr_full_df.index.name = "Class"
 report_lr_full_df
 ```
+
+The two logistic regression configurations perform nearly identically. At the per-class level, the patterns are also consistent across both models: the 2020s is the easiest decade to classify (F1 ~ 0.63), the 1980s and 2010s sit in the middle range (F1 ~ 0.49), and the 2000s is the hardest (F1 ~ 0.29-0.31), with the 1990s close behind. The only notable difference is that the PCA model slightly outperforms on the 1980s (0.493 vs. 0.474), while the full model edges ahead on the 2010s (0.498 vs. 0.488), but neither gap is meaningful. 
 
 ```{python}
 #| label: lr-cm
@@ -292,7 +293,7 @@ fig.update_layout(height=420, plot_bgcolor="white", paper_bgcolor="white",
 fig.show()
 ```
 
-It is evident that closer decades are more confused with each other, consistent with the hypothesis that adjacent eras share more lyrical vocabulary and themes. Moreover, the 2020s has the most correct predictions (296 correct compared to an average of about 120 correct predictions in other decades), suggesting that the modern era may have the most distinctive lyrical style.
+It is evident that closer decades are more confused with each other, consistent with the hypothesis that adjacent eras share more lyrical vocabulary and themes. Moreover, the 2020s has the most correct predictions, suggesting that the modern era may have the most distinctive lyrical style. 1990s and 2000s are the most confused, which could reflect a more gradual stylistic drift during that period or a higher degree of overlap in popular lyrical themes.
 
 ## 5. XGBoost Classifier (PCA Features)
 
@@ -348,7 +349,7 @@ print(f"XGB-PCA Val Acc: {xgb_pca_val_acc:.3f}, Test Acc: {xgb_pca_test_acc:.3f}
 # XGB-PCA Val Acc: 0.444, Test Acc: 0.540
 ```
 
-Even though the XGBoost model with PCA features achieves a test F1-score of 0.517, slightly outperforming logistic regression's 0.510, the difference is small. This suggests that while the non-linear modeling capacity of XGBoost may be capturing more complex relationships in the data, the pattern is not easy to discern. The validation F1 is lower than logistic regression, indicating potential overfitting to the training set.
+The XGBoost model with PCA features achieves a validation F1-score of 0.432, which is even lower than logistic regression's 0.448. This suggests that the PCA-reduced feature space may be limiting XGBoost's ability to capture complex non-linear interactions, or that the hyperparameters selected based on accuracy do not translate to optimal F1 performance. However, the model still performs substantially better than random chance (0.20), indicating it is learning meaningful patterns in the data.
 
 ```{python}
 #| label: cv-results
@@ -380,7 +381,7 @@ if os.path.exists(CV_PATH):
 ```{python}
 #| label: xgb-pca-report
 #| echo: false
-#| tbl-cap: "Per-class precision, recall, and F1 for the best XGBoost (PCA) model on the held-out test set."
+#| tbl-cap: "Per-class precision, recall, and F1 for the best XGBoost (PCA) model on the validation set."
 report_xgb = classification_report(
     y_val, xgb_pca_val_preds,
     target_names=DECADES, output_dict=True
@@ -412,7 +413,7 @@ fig.update_layout(height=420, plot_bgcolor="white", paper_bgcolor="white",
 fig.show()
 ```
 
-Compared to logistic regression, XGBoost (PCA) shows a slightly different confusion pattern. While the overall F1 is lower (0.432 vs 0.448), the model appears to be more aggressive in predicting the 2020s and 1980s correctly at the expense of the 1990s and 2000s. This asymmetry suggests the model is picking up on strong stylistic signals at the temporal extremes while struggling more in the middle decades, which might be a pattern consistent with the gradual lyrical drift hypothesis.
+Compared to logistic regression, XGBoost (PCA) shows a slightly similar confusion pattern regarding the distribution of errors across decades, though this XGBoost correctly predicted fewer tracks.
 
 ## 6. XGBoost Classifier (Full Embeddings, No PCA)
 
@@ -448,18 +449,10 @@ print(f"XGB-Full Val macro-F1: {xgb_full_val_f1:.3f}, Test macro-F1: {xgb_full_t
 print(f"XGB-Full Val Acc: {xgb_full_val_acc:.3f}, Test Acc: {xgb_full_test_acc:.3f}")
 ```
 
-XGB-Full Val macro-F1: 0.478, Test macro-F1: 0.538
-XGB-Full Val Acc: 0.485, Test Acc: 0.561
-
-The full XGBoost model achieves the best performance across all configurations. The full model's test F1 of 0.538 is a meaningful boost over the PCA version's 0.517, and the validation F1 also improves from 0.432 to 0.478.
-
-Hence this model may benefit from having access to the full feature space and can effectively select the most informative features. The improvement over the PCA-reduced version indicates that some of the variance captured by the discarded principal components may contain useful signal for decade classification. 
-
-
 ```{python}
 #| label: xgb-full-report
 #| echo: false
-#| tbl-cap: "Per-class precision, recall, and F1 for the best XGBoost (Full Embeddings) model on the held-out test set."
+#| tbl-cap: "Per-class precision, recall, and F1 for the best XGBoost (Full Embeddings) model on the validation set."
 report_xgb_full = classification_report(
     y_val, xgb_full_val_preds,
     target_names=DECADES, output_dict=True
@@ -478,10 +471,11 @@ report_xgb_full_df
 
 XGBoost (Full) improves on the PCA variant across all metrics on the validation set (F1: 0.478 vs 0.432, accuracy: 0.485 vs 0.444). This suggests that the variance discarded by PCA contains useful signal that gradient boosting can exploit through its intrinsic feature selection mechanism. The improvement is consistent enough across precision and recall that it is not driven by any single decade class.
 
+
 ```{python}
 #| label: xgb-full-cm
 #| echo: false
-#| fig-cap: "Confusion matrix for XGBoost (Full Embeddings). Adjacent decades show the most cross-decade confusion."
+#| fig-cap: "Confusion matrix for XGBoost (Full Embeddings)."
 cm_xgb_full = confusion_matrix(y_val, xgb_full_val_preds)
 fig = px.imshow(
     pd.DataFrame(cm_xgb_full, index=DECADES, columns=DECADES),
@@ -571,6 +565,9 @@ report_rf_pca_df.index.name = "Class"
 report_rf_pca_df
 ```
 
+
+Random Forest (PCA) is the weakest configuration overall with a validation F1 of 0.405. The confusion matrix reveals a more diffuse error pattern compared to XGBoost. Even though it correctly classifies more instances of the 2020s, the gain was a tradeoff with worse performance on other decades.
+
 ```{python}
 #| label: rf-pca-cm
 #| echo: false
@@ -585,7 +582,6 @@ fig = px.imshow(
 fig.show()
 ```
 
-Random Forest (PCA) is the weakest configuration overall with a validation F1 of 0.405. The confusion matrix reveals a more diffuse error pattern compared to XGBoost. 
 
 ## 8. Random Forest Classifier (Full Embeddings)
 
@@ -614,6 +610,8 @@ rf_full_test_f1  = f1_score(y_test, rf_full_test_preds, average="macro")
 print(f"RF-Full Val Acc: {rf_full_val_acc:.3f}  Test Acc: {rf_full_test_acc:.3f}")
 # RF-Full Val Acc: 0.454  Test Acc: 0.537
 ```
+
+Adding the full feature space improves Random Forest performance meaningfully (F1: 0.437 vs 0.405), narrowing but not closing the gap with XGBoost (Full). The full RF model shows a cleaner adjacent-decade confusion pattern similar to the other full-feature models, suggesting that access to all 389 dimensions helps the model focus on the most informative directions. Despite the improvement, Random Forest remains behind XGBoost on all metrics, confirming that boosting is the better inductive bias for this task.
 
 ```{python}
 #| label: rf-full-report
@@ -647,8 +645,6 @@ fig = px.imshow(
 )
 fig.show()
 ```
-
-Adding the full feature space improves Random Forest performance meaningfully (F1: 0.437 vs 0.405), narrowing but not closing the gap with XGBoost (Full). The full RF model shows a cleaner adjacent-decade confusion pattern similar to the other full-feature models, suggesting that access to all 389 dimensions helps the model focus on the most informative directions. Despite the improvement, Random Forest remains behind XGBoost on all metrics, confirming that boosting is the better inductive bias for this task.
 
 ## 9. Model Comparison
 
@@ -781,7 +777,7 @@ with open("data/processed/model_results.json", "w") as f:
 
 ## 10. SHAP Feature Importance
 
-SHAP values are computed on the **XGBoost (Full)** model, so named features especially the engineered lyrical metrics and `is_english` will appear directly rather than opaque principal components. 500 test-set tracks are sampled for efficiency and cached to disk.
+SHAP values are computed on the **XGBoost (Full)** model, so named features especially the engineered lyrical metrics and `is_english` will appear directly rather than opaque principal components.
 
 ```{python}
 #| label: shap-full-analysis
@@ -822,7 +818,7 @@ class_shap_full = np.abs(shap_full_arr).mean(axis=0)   # (389, 5)
 ```{python}
 #| label: shap-engineered-by-class
 #| echo: false
-#| fig-cap: "Mean absolute SHAP value for each engineered feature, broken down by decade class. Features with high SHAP for a specific decade are the most discriminative signals for that era. 'is_english' is consistently important for the 2020s, confirming that the model uses language as a decade signal."
+#| fig-cap: "Mean absolute SHAP value for each engineered feature, broken down by decade class."
 fig = go.Figure()
 for ci, dec in enumerate(DECADES):
     fig.add_trace(go.Bar(
@@ -850,7 +846,7 @@ Sentiment appears to have relatively low importance overall, with small fluctuat
 ```{python}
 #| label: shap-top-overall
 #| echo: false
-#| fig-cap: "Top 20 features overall by mean absolute SHAP value (XGBoost Full). Engineered features are highlighted in orange; embedding dimensions are in blue. The presence of interpretable features near the top validates the feature engineering effort."
+#| fig-cap: "Top 20 features overall by mean absolute SHAP value (XGBoost Full). Engineered features are highlighted in orange; embedding dimensions are in blue."
 top_k   = 20
 top_idx = np.argsort(mean_abs_shap_full)[-top_k:][::-1]
 colors_bar = [
@@ -889,8 +885,8 @@ For the PCA model, we can partially interpret which lyrical properties the most 
 ```{python}
 #| label: pc-correlation
 #| echo: false
-#| fig-cap: "Pearson correlation between each of the top 10 PCA components and the 5 engineered features, computed on the test set. Dark cells indicate that a PC has a meaningful linear relationship with a named feature, providing a bridge between the opaque PCA space and interpretable lyrical properties."
-#| 
+#| fig-cap: "Pearson correlation between each of the top 10 PCA components and the 5 engineered features, computed on the test set."
+
 # Compute top-10 PCs by mean |SHAP| on the PCA-XGB model
 SHAP_PCA_PATH = f"{MODELS_DIR}/shap_pca_vals.npy"
 
@@ -1170,167 +1166,76 @@ It is worth noting that Genius pageviews are a narrow proxy for commercial succe
 #| label: export-browser-artifacts
 #| include: false
 #| output: false
-# Export PCA + LR weights as JSON so the in-browser classifier can run
-# without a Python backend.
+# Export XGBoost Full trees + scaler as JSON for in-browser inference.
+# No Python backend needed: the JS widget traverses the trees directly.
 extra_means = {col: float(train_df[col].mean()) for col in EXTRA_COLS}
 
+# Scaler + extra means (no PCA needed for XGBoost Full)
 pca_export = {
-    "mean":       scaler.mean_.tolist(),
-    "scale":      scaler.scale_.tolist(),
-    "components": pca.components_.tolist(),   # (100, 389)
+    "mean":                scaler.mean_.tolist(),
+    "scale":               scaler.scale_.tolist(),
     "extra_feature_means": extra_means,
 }
-
-lr_export = {
-    "coef":      lr.coef_.tolist(),       # (5, 100)
-    "intercept": lr.intercept_.tolist(),   # (5,)
-    "classes":   DECADES,
-}
-
 with open("docs/models/pca_export.json", "w") as f:
     json.dump(pca_export, f)
 
-with open("docs/models/lr_export.json", "w") as f:
-    json.dump(lr_export, f)
+# XGBoost Full trees — flatten each tree to four parallel arrays so JS
+# can traverse them with simple index arithmetic instead of recursion.
+def _flatten_tree(tree_json_str):
+    """DFS-flatten one XGBoost JSON tree into parallel arrays.
+    Returns (features, thresholds, left_child, right_child) where
+    features[i]==-1 marks a leaf node (value in thresholds[i]).
+    'left' follows the 'yes' branch (feature < threshold).
+    """
+    root = json.loads(tree_json_str)
+    feats, threshs, lefts, rights = [], [], [], []
 
+    def dfs(node):
+        idx = len(feats)
+        if "leaf" in node:
+            feats.append(-1)
+            threshs.append(round(float(node["leaf"]), 7))
+            lefts.append(-1)
+            rights.append(-1)
+            return idx
+        yes_id   = node["yes"]
+        children = node["children"]
+        yes_node = next(c for c in children if c["nodeid"] == yes_id)
+        no_node  = next(c for c in children if c["nodeid"] != yes_id)
+        feats.append(int(node["split"][1:]))          # 'f42' -> 42
+        threshs.append(round(float(node["split_condition"]), 7))
+        lefts.append(-1)   # filled in after children are processed
+        rights.append(-1)
+        lefts[idx]  = dfs(yes_node)
+        rights[idx] = dfs(no_node)
+        return idx
+
+    dfs(root)
+    return feats, threshs, lefts, rights
+
+booster = xgb_full.get_booster()
+raw_dump = booster.get_dump(dump_format="json", with_stats=False)
+
+all_f, all_t, all_l, all_r, offsets = [], [], [], [], [0]
+for tree_str in raw_dump:
+    f, t, l, r = _flatten_tree(tree_str)
+    all_f.extend(f);  all_t.extend(t)
+    all_l.extend(l);  all_r.extend(r)
+    offsets.append(len(all_f))
+
+xgb_export = {
+    "f": all_f,        # feature index  (-1 = leaf)
+    "t": all_t,        # threshold / leaf value
+    "l": all_l,        # left  child index (yes branch)
+    "r": all_r,        # right child index (no  branch)
+    "o": offsets,      # tree start offsets (len = n_trees + 1)
+    "n_classes": 5,
+    "classes":   DECADES,
+}
+with open("docs/models/xgb_export.json", "w") as f:
+    json.dump(xgb_export, f, separators=(",", ":"))
+
+size_kb = os.path.getsize("docs/models/xgb_export.json") / 1024
+print(f"XGBoost export: {size_kb:,.0f} KB  ({len(raw_dump)} trees, {len(all_f):,} nodes)")
 print("Browser inference artifacts saved to docs/models/")
-```
-
----
-
-## Try It: What Era Are Your Lyrics From?
-
-Paste any block of song lyrics below.
-
-```{=html}
-<div id="era-widget" style="border:1px solid #ddd; border-radius:8px; padding:1.2rem; margin:1rem 0; background:#fafafa;">
-
-  <p style="margin:0 0 0.6rem; font-weight:600;">Paste song lyrics here:</p>
-
-  <textarea id="lyrics-input" rows="8"
-    style="width:100%; box-sizing:border-box; font-size:0.9rem; padding:0.5rem;
-           border:1px solid #ccc; border-radius:4px; resize:vertical; font-family:inherit;"
-    placeholder="e.g. I was running through the jungle on a moonlit night..."></textarea>
-
-  <div style="margin-top:0.7rem; display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
-    <button id="classify-btn" onclick="classifyLyrics()"
-      style="background:#4e79a7; color:white; border:none; border-radius:5px;
-             padding:0.45rem 1.2rem; font-size:0.95rem; cursor:pointer;">
-      Classify Era
-    </button>
-    <span id="status-msg" style="font-size:0.88rem; color:#555;"></span>
-  </div>
-
-  <div id="chart-container" style="display:none; margin-top:1.2rem;">
-    <p id="pred-headline" style="font-weight:600; font-size:1.05rem; margin:0 0 0.5rem;"></p>
-    <div id="bar-chart"></div>
-  </div>
-</div>
-
-<script type="module">
-/* ---- state ---- */
-let extractor = null, pcaData = null, lrData = null, modelsLoaded = false;
-
-/* ---- helpers ---- */
-function setStatus(msg) {
-  document.getElementById("status-msg").textContent = msg;
-}
-
-function softmax(logits) {
-  const m = Math.max(...logits);
-  const e = logits.map(l => Math.exp(l - m));
-  const s = e.reduce((a, b) => a + b, 0);
-  return e.map(v => v / s);
-}
-
-function renderBars(classes, probs) {
-  const predIdx = probs.indexOf(Math.max(...probs));
-  document.getElementById("pred-headline").textContent =
-    `Predicted Era: ${classes[predIdx]}  (${(probs[predIdx]*100).toFixed(1)}% confidence)`;
-
-  const colors = ["#66c2a5","#fc8d62","#8da0cb","#e78ac3","#a6d854"];
-  const html = classes.map((cls, i) => `
-    <div style="display:flex;align-items:center;margin:5px 0;gap:8px;">
-      <span style="width:52px;text-align:right;font-size:0.88rem;flex-shrink:0;">${cls}</span>
-      <div style="flex:1;background:#eee;border-radius:4px;overflow:hidden;height:22px;">
-        <div style="width:${(probs[i]*100).toFixed(1)}%;background:${colors[i]};
-                    height:100%;border-radius:4px;transition:width 0.4s;"></div>
-      </div>
-      <span style="width:44px;font-size:0.88rem;">${(probs[i]*100).toFixed(1)}%</span>
-    </div>`).join("");
-
-  document.getElementById("bar-chart").innerHTML = html;
-  document.getElementById("chart-container").style.display = "block";
-}
-
-/* ---- load models on first classify ---- */
-async function ensureModels() {
-  if (modelsLoaded) return;
-  setStatus("Loading sentence encoder (first-time download ~22 MB)…");
-
-  const { pipeline } =
-    await import("https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2");
-  extractor = await pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2",
-                              { quantized: true });
-
-  setStatus("Loading classifier weights…");
-  const base = window.location.pathname.replace(/\/[^/]*$/, "");
-  const [pRes, lRes] = await Promise.all([
-    fetch(`${base}/models/pca_export.json`),
-    fetch(`${base}/models/lr_export.json`),
-  ]);
-  pcaData = await pRes.json();
-  lrData  = await lRes.json();
-
-  modelsLoaded = true;
-  setStatus("");
-}
-
-/* ---- main classify function ---- */
-window.classifyLyrics = async function () {
-  const text = document.getElementById("lyrics-input").value.trim();
-  if (!text) { setStatus("Please paste some lyrics first."); return; }
-
-  document.getElementById("classify-btn").disabled = true;
-  try {
-    await ensureModels();
-    setStatus("Encoding…");
-
-    /* 1. embed */
-    const out = await extractor(text, { pooling: "mean", normalize: true });
-    const emb = Array.from(out.data);                  // 384 floats
-
-    /* 2. append extra features with training-set means */
-    const extras = [
-      pcaData.extra_feature_means.lyric_word_count,
-      pcaData.extra_feature_means.sentiment,
-      pcaData.extra_feature_means.rhyme_density,
-      pcaData.extra_feature_means.repetition_ratio,
-      pcaData.extra_feature_means.is_english,
-    ];
-    const full = [...emb, ...extras];                  // 389 floats
-
-    /* 3. scale */
-    const scaled = full.map((v, i) =>
-      (v - pcaData.mean[i]) / (pcaData.scale[i] || 1));
-
-    /* 4. PCA */
-    const pc = pcaData.components.map(row =>
-      row.reduce((s, w, i) => s + w * scaled[i], 0));  // 100 floats
-
-    /* 5. logistic regression + softmax */
-    const logits = lrData.coef.map((row, c) =>
-      row.reduce((s, w, i) => s + w * pc[i], 0) + lrData.intercept[c]);
-    const probs = softmax(logits);
-
-    setStatus("");
-    renderBars(lrData.classes, probs);
-  } catch (err) {
-    setStatus(`Error: ${err.message}`);
-    console.error(err);
-  } finally {
-    document.getElementById("classify-btn").disabled = false;
-  }
-};
-</script>
 ```
