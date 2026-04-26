@@ -2,7 +2,6 @@ project:
   type: website
   output-dir: "docs"       
   render:
-    - final_report.qmd
     - era-classifier.qmd
     - index.qmd
     - visualizations.qmd
@@ -14,15 +13,15 @@ website:
     left:
       - text: "Home"
         href: index.qmd
-      - text: "Explore Data"
+      - text: "Visualizations"
         href: visualizations.qmd
-      - text: "Model Results"
-        href: results.qmd
-      - text: "Try the Classifier"
+      - text: "Model Implementation"
         href: era-classifier.qmd
+      - text: "Results Summary"
+        href: results.qmd
     right:
       - text: "📄 Download Report"
-        href: report.pdf
+        href: docs/results.pdf
         target: _blank
       - icon: github
         href: https://github.com/phuonganhdangamy/jsc370-project

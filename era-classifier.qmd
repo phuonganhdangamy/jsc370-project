@@ -2,7 +2,7 @@
 title: "Detailed Modeling of Era Classification"
 ---
 
-This page trains and evaluates supervised classifiers that predict a song's decade of origin from its lyrical embedding. All heavy computation is cached to disk on first run — subsequent renders load saved artifacts.
+This page trains and evaluates supervised classifiers that predict a song's decade of origin from its lyrical embedding.
 
 ```{python}
 #| label: setup-classifier
@@ -48,6 +48,7 @@ os.makedirs("data/processed", exist_ok=True)
 ```{python}
 #| label: load-features
 #| echo: false
+#| output: false
 master_df = pd.read_parquet("data/processed/master.parquet")
 features  = pd.read_parquet("data/processed/features.parquet")
 
@@ -77,6 +78,7 @@ Each artist's entire catalogue is assigned to a single split, preventing the mod
 ```{python}
 #| label: artist-split
 #| echo: false
+#| output: false
 SPLIT_PATH = "data/processed/splits.parquet"
 
 if os.path.exists(SPLIT_PATH):
@@ -112,6 +114,12 @@ print(master_df.pivot_table(index="decade", columns="split", values="track_id", 
 ```
 
 ```{python}
+#| label: split-decade-dist
+#| echo: false
+master_df.pivot_table(index="decade", columns="split", values="track_id", aggfunc="count")[["train","val","test"]].fillna(0).astype(int)
+```
+
+```{python}
 #| label: build-matrices
 #| include: false
 train_df = master_df[master_df["split"] == "train"].reset_index(drop=True)
@@ -131,11 +139,12 @@ y_all = master_df["decade_label"].values
 
 ## 3. Dimensionality Reduction via PCA
 
-A single `StandardScaler` is fit on the training set only to ensure no data leakage. We then apply PCA to the scaled features, retaining 95% of variance. This helps reduce the 389-dimensional feature space to a more manageable number of principal components while preserving most of the information.
+A single `StandardScaler` is fit on the training set only to ensure no data leakage. We then apply PCA to the scaled features, retaining 95% of variance. This helps reduce the full dimensional feature space to a more manageable number of principal components while preserving most of the information.
 
 ```{python}
 #| label: pca-step
 #| echo: false
+#| output: false
 SCALER_PATH = f"{MODELS_DIR}/scaler.joblib"
 PCA_PATH    = f"{MODELS_DIR}/pca.joblib"
 
@@ -165,7 +174,7 @@ print(f"{n_pcs} PCs retained, explaining {cumvar[-1]*100:.1f}% of variance.")
 ```{python}
 #| label: pca-plot
 #| echo: false
-#| fig-cap: "Cumulative explained variance of the top 100 principal components. The embedding space is moderately dense. 100 components are required to explain roughly 90% of variance."
+#| fig-cap: "Cumulative explained variance of the principal components."
 fig = go.Figure()
 fig.add_trace(go.Scatter(
     x=list(range(1, 300)), y=cumvar * 100,
@@ -186,11 +195,12 @@ fig.show()
 
 ## 4. Baseline: Logistic Regression
 
-Multinomial logistic regression is run in two configurations: on 100 PCA components and on the full 389-dimensional scaled feature space to isolate the effect of dimensionality reduction independently of the model class.
+Multinomial logistic regression is run in two configurations: on 229 PCA components and on the full 389-dimensional scaled feature space to isolate the effect of dimensionality reduction independently of the model class.
 
 ```{python}
 #| label: train-lr
 #| echo: false
+#| output: false
 LR_PCA_PATH  = f"{MODELS_DIR}/lr_model.joblib"
 LR_FULL_PATH = f"{MODELS_DIR}/lr_full.joblib"
 
@@ -269,7 +279,7 @@ report_lr_full_df
 ```{python}
 #| label: lr-cm
 #| echo: false
-#| fig-cap: "Confusion matrix for logistic regression (PCA). Off-diagonal cells reveal which decades are conflated most."
+#| fig-cap: "Confusion matrix for logistic regression (PCA)."
 cm_lr = confusion_matrix(y_val, lr_val_preds)
 fig = px.imshow(
     pd.DataFrame(cm_lr, index=DECADES, columns=DECADES),
@@ -293,6 +303,7 @@ Since XGBoost has built-in feature selection, it may perform well even without P
 ```{python}
 #| label: train-xgb-pca
 #| echo: false
+#| output: false
 XGB_PCA_PATH = f"{MODELS_DIR}/xgb_pca.joblib"
 CV_PATH      = f"{MODELS_DIR}/gs_cv_results.parquet"
 
@@ -401,7 +412,7 @@ fig.update_layout(height=420, plot_bgcolor="white", paper_bgcolor="white",
 fig.show()
 ```
 
-The performance of XGB with PCA features is similar to logistic regression, with the same pattern of confusion between adjacent decades. The 2020s again has the most correct predictions and this is higher than the logistic regression, along with 1980s and 2010s. The 1990s and 2000s however have fewer correct predictions than logistic regression, suggesting that the non-linear model may be overfitting to idiosyncrasies in the training set that do not generalize as well to the validation and test sets.
+Compared to logistic regression, XGBoost (PCA) shows a slightly different confusion pattern. While the overall F1 is lower (0.432 vs 0.448), the model appears to be more aggressive in predicting the 2020s and 1980s correctly at the expense of the 1990s and 2000s. This asymmetry suggests the model is picking up on strong stylistic signals at the temporal extremes while struggling more in the middle decades, which might be a pattern consistent with the gradual lyrical drift hypothesis.
 
 ## 6. XGBoost Classifier (Full Embeddings, No PCA)
 
@@ -410,6 +421,7 @@ XGBoost's built-in feature selection may obviate the need for explicit PCA. This
 ```{python}
 #| label: train-xgb-full
 #| echo: false
+#| output: false
 XGB_FULL_PATH = f"{MODELS_DIR}/xgb_full.joblib"
 
 best_p = xgb_pca.get_params()
@@ -464,6 +476,8 @@ report_xgb_full_df.index.name = "Class"
 report_xgb_full_df
 ```
 
+XGBoost (Full) improves on the PCA variant across all metrics on the validation set (F1: 0.478 vs 0.432, accuracy: 0.485 vs 0.444). This suggests that the variance discarded by PCA contains useful signal that gradient boosting can exploit through its intrinsic feature selection mechanism. The improvement is consistent enough across precision and recall that it is not driven by any single decade class.
+
 ```{python}
 #| label: xgb-full-cm
 #| echo: false
@@ -480,24 +494,6 @@ fig.update_layout(height=420, plot_bgcolor="white", paper_bgcolor="white",
 fig.show()
 ```
 
-```{python}
-#| label: xgb-full-test-report
-#| echo: false
-#| tbl-cap: "Final evaluation: per-class precision, recall, and F1 for XGBoost (Full) on the held-out test set. This is reported once after model selection on the validation set."
-report_xgb_full_test = classification_report(
-    y_test, xgb_full_test_preds,
-    target_names=DECADES, output_dict=True
-)
-report_xgb_full_test_df = (
-    pd.DataFrame(report_xgb_full_test).T
-    .loc[DECADES + ["macro avg", "weighted avg"], ["precision", "recall", "f1-score", "support"]]
-    .rename(columns={"f1-score": "F1"})
-    .round(3)
-)
-report_xgb_full_test_df["support"] = report_xgb_full_test_df["support"].astype(int)
-report_xgb_full_test_df.index.name = "Class"
-report_xgb_full_test_df
-```
 
 ## 7. Random Forest Classifer (PCA Features)
 A random forest classifier is also trained on the PCA-reduced features with a similar grid search to XGBoost. 
@@ -505,6 +501,7 @@ A random forest classifier is also trained on the PCA-reduced features with a si
 ```{python}
 #| label: rf-param-grid
 #| echo: false
+#| output: false
 from sklearn.ensemble import RandomForestClassifier
 
 RF_PCA_PATH  = f"{MODELS_DIR}/rf_pca.joblib"
@@ -535,6 +532,7 @@ print(f"RF Best CV Accuracy: {rf_gs.best_score_:.3f}")
 ```{python}
 #| label: train-rf-pca
 #| echo: false
+#| output: false
 
 # RF Best params: {'max_depth': 20, 'max_features': 'sqrt', 'min_samples_split': 2, 'n_estimators': 400}
 # RF Best CV Accuracy: 0.482
@@ -587,12 +585,14 @@ fig = px.imshow(
 fig.show()
 ```
 
+Random Forest (PCA) is the weakest configuration overall with a validation F1 of 0.405. The confusion matrix reveals a more diffuse error pattern compared to XGBoost. 
+
 ## 8. Random Forest Classifier (Full Embeddings)
 
 ```{python}
 #| label: train-rf-full
 #| echo: false
-#| 
+#| output: false
 rf_full = RandomForestClassifier(
     n_estimators=400,
     max_depth=20,
@@ -648,7 +648,9 @@ fig = px.imshow(
 fig.show()
 ```
 
-## 7. Model Comparison
+Adding the full feature space improves Random Forest performance meaningfully (F1: 0.437 vs 0.405), narrowing but not closing the gap with XGBoost (Full). The full RF model shows a cleaner adjacent-decade confusion pattern similar to the other full-feature models, suggesting that access to all 389 dimensions helps the model focus on the most informative directions. Despite the improvement, Random Forest remains behind XGBoost on all metrics, confirming that boosting is the better inductive bias for this task.
+
+## 9. Model Comparison
 
 ```{python} 
 #| label: model-comparison
@@ -664,6 +666,31 @@ comparison = pd.DataFrame({
 }).round(3)
 comparison
 ```
+
+XGBoost trained on the full feature space achieves the highest validation F1 (0.478) and accuracy (0.485), making it the clear winner among all six configurations. Interestingly, logistic regression performs competitively; both PCA and full variants achieve F1 around 0.448-0.449, slightly outperforming XGBoost (PCA) at 0.432. This suggests that a meaningful share of decade signal is encoded in linearly separable directions within the embedding space, and that PCA does not hurt logistic regression the way it hurts XGBoost. Random Forest trails behind in both configurations, with the PCA variant performing worst overall (F1 = 0.405), suggesting that bagged trees are less effective than boosted trees for this task. 
+
+Therefore, based on these results, XGBoost (Full) is selected as the final model and evaluated once on the held-out test set.
+
+```{python}
+#| label: xgb-full-test-report
+#| echo: false
+#| tbl-cap: "Final evaluation: per-class precision, recall, and F1 for XGBoost (Full) on the held-out test set. This is reported once after model selection on the validation set."
+report_xgb_full_test = classification_report(
+    y_test, xgb_full_test_preds,
+    target_names=DECADES, output_dict=True
+)
+report_xgb_full_test_df = (
+    pd.DataFrame(report_xgb_full_test).T
+    .loc[DECADES + ["macro avg", "weighted avg"], ["precision", "recall", "f1-score", "support"]]
+    .rename(columns={"f1-score": "F1"})
+    .round(3)
+)
+report_xgb_full_test_df["support"] = report_xgb_full_test_df["support"].astype(int)
+report_xgb_full_test_df.index.name = "Class"
+report_xgb_full_test_df
+```
+
+On the held-out test set, XGBoost (Full) achieves a macro-F1 of 0.538 and accuracy of 0.56 - a meaningful improvement over the validation figures (0.478 and 0.485), meaning that the model generalises well rather than being optimistic on val. The per-class breakdown shows the 1980s and 2020s remain the most reliably classified decades, while the 1990s and 2000s continue to be the hardest pair to separate, reflecting their overlapping lyrical vocabulary during the era of grunge, early hip hop crossover, and the rise of pop-rock.
 
 ```{python}
 #| label: xgb-full-test-cm
@@ -682,6 +709,11 @@ fig.update_layout(height=420, plot_bgcolor="white", paper_bgcolor="white",
                   margin=dict(l=0, r=0, t=50, b=0))
 fig.show()
 ```
+
+The final test set confusion matrix reveals several striking patterns. The 2020s dominates with 317 correct predictions out of 402 songs (79% recall), by far the highest of any decade. This confirms that contemporary lyrical style is the most distinctive era in the corpus, likely driven by the combination of modern slang, Latin influence, and streaming-optimized song structures. The 1980s follows with 155 correct (49% recall), benefiting from its distinctive rock and dance-era vocabulary. The middle decades are substantially harder: the 2000s achieves only 124 correct (45% recall) and the 2010s only 110 (46% recall), with the 1990s sitting at 131 (52% recall). 
+
+
+The off-diagonal tells an equally interesting story. The 1990s bleeds heavily into the 2020s (30 songs predicted as 2020s), which is unexpected for non-adjacent decades and may reflect the growing trend of 90s revival aesthetics in modern music. The 2000s similarly leaks into the 2020s (42 songs), suggesting that some early-2000s lyrical styles have more in common with contemporary music than with the 1990s. The 1980s–1990s boundary remains the most classically confused adjacent pair (73 songs from the 1980s predicted as 1990s), consistent with the gradual transition from classic rock to grunge and early hip hop. Notably, almost no songs from any decade are predicted as 1980s except true 1980s tracks, meaning the model treats the 1980s as a fairly exclusive category that is hard to fake.
 
 ```{python}
 #| label: save-results
@@ -747,7 +779,7 @@ with open("data/processed/model_results.json", "w") as f:
     json.dump(results, f, indent=2, cls=NumpyEncoder)
 ```
 
-## 8. SHAP Feature Importance
+## 10. SHAP Feature Importance
 
 SHAP values are computed on the **XGBoost (Full)** model, so named features especially the engineered lyrical metrics and `is_english` will appear directly rather than opaque principal components. 500 test-set tracks are sampled for efficiency and cached to disk.
 
@@ -850,7 +882,7 @@ fig.show()
 
 We can see that engineered features like repetition_ratio, lyric_word_count, and rhyme_density are among the top overall features, confirming that the model is leveraging these interpretable lyrical properties much more than any single embedding dimension. is_english is not in the top 20 overall, which is surprising given its contextual importance in the modern era.
 
-### What Do the Top PCs Encode? Correlation with Engineered Features
+### Aside: What Do the Top PCs Encode? Correlation with Engineered Features
 
 For the PCA model, we can partially interpret which lyrical properties the most important principal components capture by correlating PC scores against the interpretable engineered features.
 
@@ -919,13 +951,14 @@ fig.show()
 
 PC1 dominates the correlation structure, showing strong positive associations with is_english (r = 0.87) and rhyme_density (r = 0.67), suggesting it primarily captures a dimension related to English-language lyrical structure. sentiment also loads moderately on PC1 (r = 0.35) and PC2 (r = 0.25). The remaining components show weak correlations with all engineered features, indicating they capture semantic variation in the embedding space that is not directly expressed by the five hand-crafted metrics. Overall, the engineered features explain only a narrow slice of the PCA space, which is expected given that 384 of the 389 input dimensions are dense embedding coordinates.
 
-## 9. UMAP Projection
+## 11. UMAP Projection
 
 A 2-dimensional UMAP projection of the test-set embeddings visualizes how songs cluster in the lyrical space, and where the model's predictions align or diverge from ground truth.
 
 ```{python}
 #| label: umap-projection
 #| echo: false
+#| output: false
 UMAP_PATH = "data/processed/umap_data.parquet"
 
 
@@ -991,6 +1024,11 @@ fig.update_layout(
 fig.show()
 ```
 
+The data organizes into a large primary mass in the upper left (roughly UMAP1 < -5, UMAP2 > 13) containing the majority of songs from all five decades heavily intermixed. 
+
+There are two clearly isolated satellite clusters: a small tight cluster around (UMAP1 around -4 to -2, UMAP2 ≈ 6-8) and a dense well-separated cluster in the far right (UMAP1 aroudn 12-14, UMAP2 around 2-3). Both satellite clusters are almost entirely green (2020s), suggesting they represent a cohort of modern songs with a very distinct lyrical identity.The near-total absence of other decades in these satellite clusters explains in part why the 2020s achieves such high recall: a large proportion of its songs are simply not in the same neighborhood as any other era.
+
+
 ```{python}
 #| label: umap-misclass
 #| echo: false
@@ -1015,13 +1053,17 @@ fig.update_layout(
 fig.show()
 ```
 
-## 10. The Nostalgia Sells Hypothesis
+Overlaying classification outcomes onto the UMAP makes the error geography immediately visible. The large primary cluster in the upper left is densely packed with red (misclassified) points, confirming that this is the region of maximum lyrical ambiguity where the model struggles most. Songs from all five decades share this semantic neighborhood and the boundaries are fundamentally blurry. 
+
+
+## 12. The Nostalgia Sells Hypothesis
 
 The secondary hypothesis predicts that modern songs (2010s/2020s) whose lyrics are misclassified as vintage (1980s/1990s) will have higher listener engagement than correctly classified modern songs, supporting the "nostalgia sells" theory.
 
 ```{python}
 #| label: nostalgia-analysis
 #| echo: false
+#| output: false
 modern_df = master_df[master_df["decade"].isin(["2010s", "2020s"])].copy()
 modern_df = modern_df.merge(
     umap_df[["track_id", "pred_decade", "is_time_traveler"]],
@@ -1087,6 +1129,12 @@ fig.update_layout(
 fig.show()
 ```
 
+The pageview distributions provide no support for the nostalgia sells hypothesis. 
+
+On the log scale, correctly classified modern songs have a visibly higher median (approximately 10^5, or 90,000 pageviews) compared to time travelers (approximately 10^4.8, or 65,000 pageviews), and the correctly classified group extends further into the upper tail - reaching past 10^7 while time travelers cap around 10^6.5. 
+
+The raw scale plot makes the extreme skew even more apparent: the correctly classified group contains songs with upwards of 17 million Genius pageviews while time travelers max out around 4 million. The vast majority of songs in both groups cluster near zero regardless of scale, confirming that a small number of viral outliers dominate the mean. Even on the median, time travelers do not outperform correctly classified songs. If a nostalgia sells effect exists in popular music, it is not detectable through Genius pageviews in this corpus, and the evidence leans in the opposite direction: the highest-engagement modern songs tend to be those that sound distinctly contemporary rather than vintage.
+
 ```{python}
 #| label: nostalgia-plot
 #| echo: false
@@ -1116,10 +1164,12 @@ fig.update_layout(
 fig.show()
 ```
 
+It is worth noting that Genius pageviews are a narrow proxy for commercial success. Listener engagement in the modern era is more naturally measured through streaming platform play counts, YouTube views, TikTok usage, or social media virality. A song can accumulate enormous streaming numbers without ever driving significant lyric-lookup traffic on Genius, and conversely, a lyrically complex or nostalgic song may attract disproportionate Genius visits precisely because listeners want to parse its words rather than because it is commercially dominant. Hence, the absence of a nostalgia effect in this analysis should therefore be interpreted cautiously.
 
 ```{python}
 #| label: export-browser-artifacts
 #| include: false
+#| output: false
 # Export PCA + LR weights as JSON so the in-browser classifier can run
 # without a Python backend.
 extra_means = {col: float(train_df[col].mean()) for col in EXTRA_COLS}
@@ -1150,7 +1200,7 @@ print("Browser inference artifacts saved to docs/models/")
 
 ## Try It: What Era Are Your Lyrics From?
 
-Paste any block of song lyrics below. The classifier runs entirely in your browser using the same `all-MiniLM-L6-v2` sentence encoder and the logistic regression model trained above. The model downloads (~22 MB) on first use and is cached by your browser.
+Paste any block of song lyrics below.
 
 ```{=html}
 <div id="era-widget" style="border:1px solid #ddd; border-radius:8px; padding:1.2rem; margin:1rem 0; background:#fafafa;">

@@ -1,6 +1,6 @@
 ---
 title: "Sonic Time Travelers"
-subtitle: "Can a song's lyrical identity place it in its era - and do retro-sounding modern songs sell better?"
+subtitle: "Can a song's lyrical identity place it in its era, and do retro-sounding modern songs sell better?"
 ---
 
 ```{python}
@@ -45,8 +45,8 @@ Music, like fashion, moves in cycles. Some contemporary artists are celebrated p
 
 ## Data Sources
 
-Data was collected live across three APIs: **Spotify** for track metadata and decade labeling, **Genius** for song lyrics and page view counts, and **MusicBrainz** for artist country of origin and genre tags. No pre-assembled Kaggle datasets were used.
+Data was collected live across three APIs: **Spotify** for track metadata and decade labeling, **Genius** for song lyrics and page view counts, and **MusicBrainz** for artist country of origin and genre tags.
 
 ## Modeling Summary
 
-<!-- [Download the full report (PDF)](final_report.pdf){.btn-report} -->
+[Download the full report (PDF)](docs/results.pdf){.btn-report}
