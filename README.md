@@ -2,6 +2,7 @@
 ### JSC370 Project — University of Toronto, 2026
 
 **Website:** https://phuonganhdangamy.github.io/jsc370-project
+**Presentation:** https://drive.google.com/file/d/1NMrsqgEzYZIpcpZ-DrLGA_QxFhKcTFv8/view?usp=drive_link 
 
 ---
 
@@ -24,13 +25,14 @@ Data is collected live from three APIs (Spotify, Genius, MusicBrainz), lyrics ar
 ## Repository Structure
 
 ```
-├── midterm.qmd          # Data collection pipeline (Spotify, Genius, MusicBrainz)
+├── midterm.qmd          # Midterm progress
+├── era-classifier.qmd   # Data collection pipeline (Spotify, Genius, MusicBrainz) and feature engineerings
 ├── era-classifier.qmd   # Feature engineering, model training, SHAP, UMAP
 ├── results.qmd          # Model results and interpretation (rendered page)
 ├── visualizations.qmd   # Interactive EDA plots (rendered page)
 ├── try-it.qmd           # Interactive era classifier widget (rendered page)
 ├── index.qmd            # Landing page
-├── final_report.qmd     # Full written report
+├── final_report.qmd     # Drafts
 ├── _quarto.yml          # Site configuration
 ├── requirements.txt
 ├── data/
@@ -45,7 +47,7 @@ Data is collected live from three APIs (Spotify, Genius, MusicBrainz), lyrics ar
 
 ## Reproducibility
 
-All data collection scripts are in `midterm.qmd`. To reproduce:
+All data collection scripts are in `data-collection.qmd`. To reproduce:
 
 1. Clone the repository
 2. Create a virtual environment and install dependencies (see **Environment Setup** below)
@@ -57,7 +59,7 @@ All data collection scripts are in `midterm.qmd`. To reproduce:
 
 **Note:** Spotify API is subject to rate limits (development mode). Full data collection takes approximately 2–3 hours across all steps. Intermediate parquet and CSV checkpoints are saved throughout so the pipeline is resumable.
 
-If API credentials are not available, skip the data collection section of `midterm.qmd` and continue from the saved checkpoints in `data/`.
+If API credentials are not available, skip the data collection section of `data-collection.qmd` and continue from the saved checkpoints in `data/`.
 
 ---
 
