@@ -53,14 +53,14 @@
     "href": "visualizations.html#top-10-most-viewed-artists-by-decade",
     "title": "Visualizations",
     "section": "Top 10 Most Viewed Artists by Decade",
-    "text": "Top 10 Most Viewed Artists by Decade"
+    "text": "Top 10 Most Viewed Artists by Decade\n\n\n                            \n                                            \nTop 10 most-viewed artists on Genius per decade. Use the dropdown to browse each era."
   },
   {
     "objectID": "visualizations.html#page-views-vs.-word-count",
     "href": "visualizations.html#page-views-vs.-word-count",
     "title": "Visualizations",
     "section": "Page Views vs. Word Count",
-    "text": "Page Views vs. Word Count\n\n\n                            \n                                            \nPageviews vs lyric word count colored by decade. Longer lyrics do not necessarily drive higher engagement."
+    "text": "Page Views vs. Word Count\n\n\n                            \n                                            \nPageviews vs lyric word count colored by decade. Longer lyrics do not necessarily drive higher engagement.\n\n\nThe vast majority of songs cluster below 1000 words with very large variance and no clear correlation between word count and pageviews. The LOWESS trendline peaks around 1000-1200 words and declines steadily afterward, indicating that beyond a moderate length, longer lyrics are actually associated with lower engagement. Songs exceeding 2000 words are sparse and rarely achieve high pageviews.\nDecade-wise, 2020s songs (green) dominate the low word-count end, consistent with the trend toward shorter lyrics, while older decades like the 1990s and 2000s extend further right. Overall, word count is a weak predictor of popularity."
   },
   {
     "objectID": "visualizations.html#sentiment-by-decade",
@@ -74,14 +74,14 @@
     "href": "visualizations.html#repetition-ratio-by-decade",
     "title": "Visualizations",
     "section": "Repetition Ratio by Decade",
-    "text": "Repetition Ratio by Decade\n\n\n                            \n                                            \nRepetition ratio by decade, proportion of lines that are duplicates within a song. Higher repetition reflects more chorus-driven, hook-heavy song structures.\n\n\nRepetition ratio increases gradually and consistently from the 1980s to the 2010s, with medians rising and interquartile ranges shifting upward over time. The 1980s distribution is wide and bottom-heavy, with considerable mass near zero indicating many songs with low repetition, while the 1990s show a similar but slightly tighter spread. From the 2000s onward, the bulk of the distribution consolidates in the middle range, and by the 2010s the median reaches its highest point across all decades. The 2020s pull back slightly, with a lower median and a more compressed distribution, though still higher than the 1980s and 1990s baseline. This trend toward higher repetition may reflect the increasing dominance of pop and hip hop genres, which tend to rely more heavily on chorus-driven structures and catchy hooks, as well as broader shifts in songwriting style favoring simplicity and memorability."
+    "text": "Repetition Ratio by Decade\n\n\n                            \n                                            \nRepetition ratio by decade, proportion of lines that are duplicates within a song.\n\n\nRepetition ratio increases gradually and consistently from the 1980s to the 2010s, with medians rising and interquartile ranges shifting upward over time. The 1980s distribution is wide and bottom-heavy, with considerable mass near zero indicating many songs with low repetition, while the 1990s show a similar but slightly tighter spread. From the 2000s onward, the bulk of the distribution consolidates in the middle range, and by the 2010s the median reaches its highest point across all decades. The 2020s pull back slightly, with a lower median and a more compressed distribution, though still higher than the 1980s and 1990s baseline. This trend toward higher repetition may reflect the increasing dominance of pop and hip hop genres, which tend to rely more heavily on chorus-driven structures and catchy hooks, as well as broader shifts in songwriting style favoring simplicity and memorability."
   },
   {
     "objectID": "visualizations.html#rhyme-density-by-decade",
     "href": "visualizations.html#rhyme-density-by-decade",
     "title": "Visualizations",
     "section": "Rhyme Density by Decade",
-    "text": "Rhyme Density by Decade\n\n\n                            \n                                            \nRhyme density by decade, proportion of line endings that share a rhyme sound with another line. Captures how structured and rhyme-driven lyrics are across eras.\n\n\nRhyme density remains relatively high and stable from the 1980s through the 2010s, with medians consistently around 0.65–0.75 and distributions concentrated in the upper half of the range. The 1980s show the tightest clustering near the top, while the 1990s and 2000s introduce more spread downward without meaningfully shifting the median. The 2010s maintain a similar central tendency but with a slightly longer lower tail. The most striking change comes in the 2020s, as the median drops to around 0.4–0.5 and the interquartile range widens considerably."
+    "text": "Rhyme Density by Decade\n\n\n                            \n                                            \nRhyme density by decade, proportion of line endings that share a rhyme sound with another line.\n\n\nRhyme density remains relatively high and stable from the 1980s through the 2010s, with medians consistently around 0.65–0.75 and distributions concentrated in the upper half of the range. The 1980s show the tightest clustering near the top, while the 1990s and 2000s introduce more spread downward without meaningfully shifting the median. The 2010s maintain a similar central tendency but with a slightly longer lower tail. The most striking change comes in the 2020s, as the median drops to around 0.4–0.5 and the interquartile range widens considerably."
   },
   {
     "objectID": "visualizations.html#language-distribution-by-decade",

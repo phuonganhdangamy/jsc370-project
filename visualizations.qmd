@@ -330,106 +330,6 @@ pv_df = master_df[master_df["pageviews"].notna()].copy()
 pv_df["log_pageviews"] = np.log10(pv_df["pageviews"])
 ```
 
-## Top 10 Most Viewed Songs by Decade
-```{python}
-#| label: top-songs-pageviews
-#| echo: false
-#| fig-cap: "Top 10 most-viewed songs on Genius per decade. Use the dropdown to browse each era."
-
-buttons = []
-traces = []
-colors = px.colors.qualitative.Pastel
-
-for i, decade in enumerate(decade_order):
-    top = (
-        pv_df[pv_df["decade"] == decade]
-        .nlargest(10, "pageviews")
-        .sort_values("pageviews")
-    )
-    top["label"] = top["track_name"] 
-    
-    traces.append(go.Bar(
-        x=top["pageviews"],
-        y=top["label"],
-        orientation="h",
-        marker_color=colors[i],
-        name=decade,
-        visible=(i == 0),
-        hovertemplate="<b>%{y}</b><br>Pageviews: %{x:,.0f}<extra></extra>",
-    ))
-    visibility = [j == i for j in range(len(decade_order))]
-    buttons.append(dict(
-        label=decade,
-        method="update",
-        args=[{"visible": visibility}],
-    ))
-
-fig = go.Figure(data=traces)
-fig.update_layout(
-    height=420,
-    updatemenus=[dict(
-        active=0, buttons=buttons,
-        x=0.01, y=1.15, xanchor="left", yanchor="top", direction="down",
-    )],
-    xaxis_title="Genius Pageviews",
-    plot_bgcolor="white",
-    paper_bgcolor="white",
-    margin=dict(l=0, r=0, t=60, b=0),
-    showlegend=False,
-)
-fig.show()
-```
-
-## Top 10 Most Viewed Artists by Decade
-```{python}
-#| label: top-artists-pageviews
-#| echo: false
-#| fig-cap: "Top 10 most-viewed artists on Genius per decade. Use the dropdown to browse each era."
-#| include: false
-buttons = []
-traces = []
-colors = px.colors.qualitative.Pastel
-
-for i, decade in enumerate(decade_order):
-    top = (
-        pv_df[pv_df["decade"] == decade]
-        .groupby("artist_name")["pageviews"]
-        .sum()
-        .nlargest(10)
-        .sort_values()
-    )
-    traces.append(go.Bar(
-        x=top.values,
-        y=top.index,
-        orientation="h",
-        marker_color=colors[i],
-        name=decade,
-        visible=(i == 0),
-        hovertemplate="<b>%{y}</b><br>Total Pageviews: %{x:,.0f}<extra></extra>",
-    ))
-    visibility = [j == i for j in range(len(decade_order))]
-    buttons.append(dict(
-        label=decade,
-        method="update",
-        args=[{"visible": visibility}],
-    ))
-
-fig = go.Figure(data=traces)
-fig.update_layout(
-    height=420,
-    updatemenus=[dict(
-        active=0, buttons=buttons,
-        x=0.01, y=1.15, xanchor="left", yanchor="top", direction="down",
-    )],
-    xaxis_title="Total Genius Pageviews",
-    plot_bgcolor="white",
-    paper_bgcolor="white",
-    margin=dict(l=0, r=0, t=60, b=0),
-    showlegend=False,
-)
-fig.show()
-```
-
 ## Page Views vs. Word Count
 ```{python}
 #| label: pageviews-wordcount
@@ -469,6 +369,10 @@ fig.update_yaxes(tickvals=tickvals, ticktext=[f"10<sup>{v}</sup>" for v in tickv
 fig.show()
 ```
 
+The vast majority of songs cluster below 1000 words with very large variance and no clear correlation between word count and pageviews. The LOWESS trendline peaks around 1000-1200 words and declines steadily afterward, indicating that beyond a moderate length, longer lyrics are actually associated with lower engagement. Songs exceeding 2000 words are sparse and rarely achieve high pageviews.
+
+Decade-wise, 2020s songs (green) dominate the low word-count end, consistent with the trend toward shorter lyrics, while older decades like the 1990s and 2000s extend further right. Overall, word count is a weak predictor of popularity.
+
 ## Sentiment by Decade
 ```{python}
 #| label: sentiment-by-decade
@@ -503,7 +407,7 @@ Sentiment distributions are broadly similar across all decades, with medians con
 ```{python}
 #| label: repetition-by-decade
 #| echo: false
-#| fig-cap: "Repetition ratio by decade, proportion of lines that are duplicates within a song. Higher repetition reflects more chorus-driven, hook-heavy song structures."
+#| fig-cap: "Repetition ratio by decade, proportion of lines that are duplicates within a song."
 
 fig = px.violin(
     master_df.dropna(subset=["repetition_ratio"]),
@@ -531,7 +435,7 @@ Repetition ratio increases gradually and consistently from the 1980s to the 2010
 ```{python}
 #| label: rhyme-by-decade
 #| echo: false
-#| fig-cap: "Rhyme density by decade, proportion of line endings that share a rhyme sound with another line. Captures how structured and rhyme-driven lyrics are across eras."
+#| fig-cap: "Rhyme density by decade, proportion of line endings that share a rhyme sound with another line."
 
 fig = px.violin(
     master_df.dropna(subset=["rhyme_density"]),
@@ -600,3 +504,103 @@ fig.show()
 ```
 
 English dominates the corpus throughout, but its share erodes dramatically over time. From roughly 85% in the 1980s, it dips to around 73% in the 1990s and 2000s, recovers slightly in the 2010s, then collapses to just about 44% in 2020s. Spanish grew steadily from roughly 5% in the 1980s to nearly 30% by the 2020s, directly mirroring Latin music's mainstream rise. French maintains a small but consistent presence across all decades. The "other" category expands noticeably in the 2020s, likely capturing the rise of K-pop and other non-Western music. Turkish (tr) and Tagalog (tl) appear as minor but persistent contributors from the 1990s onward, reflecting the global diversity of popular music even in earlier decades.
+
+## Top 10 Most Viewed Songs by Decade
+```{python}
+#| label: top-songs-pageviews
+#| echo: false
+#| fig-cap: "Top 10 most-viewed songs on Genius per decade. Use the dropdown to browse each era."
+
+buttons = []
+traces = []
+colors = px.colors.qualitative.Pastel
+
+for i, decade in enumerate(decade_order):
+    top = (
+        pv_df[pv_df["decade"] == decade]
+        .nlargest(10, "pageviews")
+        .sort_values("pageviews")
+    )
+    top["label"] = top["track_name"] 
+    
+    traces.append(go.Bar(
+        x=top["pageviews"],
+        y=top["label"],
+        orientation="h",
+        marker_color=colors[i],
+        name=decade,
+        visible=(i == 0),
+        hovertemplate="<b>%{y}</b><br>Pageviews: %{x:,.0f}<extra></extra>",
+    ))
+    visibility = [j == i for j in range(len(decade_order))]
+    buttons.append(dict(
+        label=decade,
+        method="update",
+        args=[{"visible": visibility}],
+    ))
+
+fig = go.Figure(data=traces)
+fig.update_layout(
+    height=420,
+    updatemenus=[dict(
+        active=0, buttons=buttons,
+        x=0.01, y=1.15, xanchor="left", yanchor="top", direction="down",
+    )],
+    xaxis_title="Genius Pageviews",
+    plot_bgcolor="white",
+    paper_bgcolor="white",
+    margin=dict(l=0, r=0, t=60, b=0),
+    showlegend=False,
+)
+fig.show()
+```
+
+## Top 10 Most Viewed Artists by Decade
+```{python}
+#| label: top-artists-pageviews
+#| echo: false
+#| fig-cap: "Top 10 most-viewed artists on Genius per decade. Use the dropdown to browse each era."
+
+buttons = []
+traces = []
+colors = px.colors.qualitative.Pastel
+
+for i, decade in enumerate(decade_order):
+    top = (
+        pv_df[pv_df["decade"] == decade]
+        .groupby("artist_name")["pageviews"]
+        .sum()
+        .nlargest(10)
+        .sort_values()
+    )
+    traces.append(go.Bar(
+        x=top.values,
+        y=top.index,
+        orientation="h",
+        marker_color=colors[i],
+        name=decade,
+        visible=(i == 0),
+        hovertemplate="<b>%{y}</b><br>Total Pageviews: %{x:,.0f}<extra></extra>",
+    ))
+    visibility = [j == i for j in range(len(decade_order))]
+    buttons.append(dict(
+        label=decade,
+        method="update",
+        args=[{"visible": visibility}],
+    ))
+
+fig = go.Figure(data=traces)
+fig.update_layout(
+    height=420,
+    updatemenus=[dict(
+        active=0, buttons=buttons,
+        x=0.01, y=1.15, xanchor="left", yanchor="top", direction="down",
+    )],
+    xaxis_title="Total Genius Pageviews",
+    plot_bgcolor="white",
+    paper_bgcolor="white",
+    margin=dict(l=0, r=0, t=60, b=0),
+    showlegend=False,
+)
+fig.show()
+```
